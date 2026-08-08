@@ -64,6 +64,7 @@ namespace AmatoraObsWpf
         private System.Windows.Controls.Button btnTogglePassword;
         private bool isPasswordVisible = false;
         private System.Windows.Controls.TextBox txtObsSceneName;
+        private System.Windows.Controls.TextBox txtReplayDuration;
         private System.Windows.Controls.TextBox txtFolder;
         private System.Windows.Controls.TextBox txtFieldId;
         private System.Windows.Controls.Button btnSaveConfig;
@@ -81,6 +82,7 @@ namespace AmatoraObsWpf
         private string safeObsPort = "4455";
         private string safeObsPassword = "";
         private string safeObsSceneName = "ReplayBuffer";
+        private string safeReplayDurationSec = "18";
         private string safeFolder = @"C:\Replays";
         private string safeFieldId = "1";
 
@@ -94,7 +96,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v2.5.0)";
+            Title = "AMATORA OBS Replay Engine (v2.6.0)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -293,6 +295,7 @@ namespace AmatoraObsWpf
                         else if (line.StartsWith("Port=")) safeObsPort = line.Substring(5).Trim();
                         else if (line.StartsWith("Password=")) safeObsPassword = line.Substring(9).Trim();
                         else if (line.StartsWith("Scene=")) safeObsSceneName = line.Substring(6).Trim();
+                        else if (line.StartsWith("Duration=")) safeReplayDurationSec = line.Substring(9).Trim();
                         else if (line.StartsWith("Folder=")) safeFolder = line.Substring(7).Trim();
                         else if (line.StartsWith("FieldId=")) safeFieldId = line.Substring(8).Trim();
                     }
@@ -301,6 +304,7 @@ namespace AmatoraObsWpf
             }
 
             if (string.IsNullOrEmpty(safeFieldId)) safeFieldId = "1";
+            if (string.IsNullOrEmpty(safeReplayDurationSec)) safeReplayDurationSec = "18";
         }
 
         private void SaveUserConfigValues()
@@ -313,6 +317,7 @@ namespace AmatoraObsWpf
                 safeObsPort = string.IsNullOrWhiteSpace(txtObsPort.Text) ? "4455" : txtObsPort.Text.Trim();
                 safeObsPassword = pwdToSave;
                 safeObsSceneName = string.IsNullOrWhiteSpace(txtObsSceneName.Text) ? "ReplayBuffer" : txtObsSceneName.Text.Trim();
+                safeReplayDurationSec = string.IsNullOrWhiteSpace(txtReplayDuration.Text) ? "18" : txtReplayDuration.Text.Trim();
                 safeFolder = string.IsNullOrWhiteSpace(txtFolder.Text) ? @"C:\Replays" : txtFolder.Text.Trim();
                 safeFieldId = string.IsNullOrWhiteSpace(txtFieldId.Text) ? "1" : txtFieldId.Text.Trim();
 
@@ -321,6 +326,7 @@ namespace AmatoraObsWpf
                 sb.AppendLine("Port=" + safeObsPort);
                 sb.AppendLine("Password=" + safeObsPassword);
                 sb.AppendLine("Scene=" + safeObsSceneName);
+                sb.AppendLine("Duration=" + safeReplayDurationSec);
                 sb.AppendLine("Folder=" + safeFolder);
                 sb.AppendLine("FieldId=" + safeFieldId);
 
@@ -332,7 +338,7 @@ namespace AmatoraObsWpf
                 // Re-check OBS connection with new settings
                 CheckObsWebSocketConnectionAsync();
 
-                System.Windows.MessageBox.Show("✅ SOZLAMALAR MUVAFFAQIYATLI SAQLANDI!\n\nMaydon raqami: " + safeFieldId + "-MAYDON\nOBS Port: " + safeObsPort, "AMATORA OBS", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show("✅ SOZLAMALAR MUVAFFAQIYATLI SAQLANDI!\n\nMaydon raqami: " + safeFieldId + "-MAYDON\nReplay Davomiyligi: " + safeReplayDurationSec + " sekunt", "AMATORA OBS", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
@@ -344,7 +350,7 @@ namespace AmatoraObsWpf
         {
             if (txtHeaderFieldBadge != null) txtHeaderFieldBadge.Text = "MAYDON #" + safeFieldId;
             if (txtMainFieldTitle != null) txtMainFieldTitle.Text = "FIELD MONITOR (MAYDON #" + safeFieldId + ")";
-            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.5.0) — Maydon #" + safeFieldId + " faol!";
+            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.6.0) — Maydon #" + safeFieldId + " faol!";
             if (trayIcon != null) trayIcon.Text = "AMATORA Engine (Maydon #" + safeFieldId + ")";
         }
 
@@ -409,7 +415,7 @@ namespace AmatoraObsWpf
             Grid.SetColumn(logoPanel, 0);
             headerGrid.Children.Add(logoPanel);
 
-            // Nav Tabs (Removed Tablo)
+            // Nav Tabs
             StackPanel navPanel = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             btnTabObs = CreateNavButton("🎥 OBS AUTOMATION", true);
             btnTabSettings = CreateNavButton("⚙️ SOZLAMALAR", false);
@@ -501,7 +507,7 @@ namespace AmatoraObsWpf
             };
             txtEngineStatusSub = new TextBlock
             {
-                Text = "AMATORA OBS Replay Engine (v2.5.0) — Maydon #" + safeFieldId + " faol!",
+                Text = "AMATORA OBS Replay Engine (v2.6.0) — Maydon #" + safeFieldId + " faol!",
                 FontSize = 13,
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(140, 140, 170)),
                 Margin = new Thickness(0, 4, 0, 0)
@@ -582,7 +588,7 @@ namespace AmatoraObsWpf
             scrollActivityFeed.Content = pnlActivityFeed;
             feedBorder.Child = scrollActivityFeed;
 
-            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.5.0) tushdi! Maydon #" + safeFieldId + " — MainScene holatida jonli signal kutilmoqda...", "#00F2FE");
+            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.6.0) tushdi! Maydon #" + safeFieldId + " — Replay davomiyligi: " + safeReplayDurationSec + "s (Kechikishsiz almashtirish)", "#00F2FE");
 
             return b;
         }
@@ -680,6 +686,11 @@ namespace AmatoraObsWpf
             container.Children.Add(CreateFormLabel("🎬 OBS Replay Sahna Nomi (Default: ReplayBuffer):"));
             txtObsSceneName = CreateFormInput(safeObsSceneName);
             container.Children.Add(txtObsSceneName);
+
+            // Replay Duration (Seconds)
+            container.Children.Add(CreateFormLabel("⏱️ Replay Efir Davomiyligi (Sekund, Masalan: 18 yoki 20):"));
+            txtReplayDuration = CreateFormInput(safeReplayDurationSec);
+            container.Children.Add(txtReplayDuration);
 
             // Replay Folder
             container.Children.Add(CreateFormLabel("📁 OBS Replays Papkasi (Video Directory):"));
@@ -870,6 +881,10 @@ namespace AmatoraObsWpf
             int.TryParse(safeObsPort, out port);
             string wsUriStr = "ws://" + safeObsIp + ":" + port;
 
+            int durationSec = 18;
+            int.TryParse(safeReplayDurationSec, out durationSec);
+            if (durationSec <= 0) durationSec = 18;
+
             try
             {
                 AddActivityFeedCard("⚽ WORKFLOW", "Gol Replay avtomatizatsiyasi boshlandi! (Maydon #" + safeFieldId + ")", "#00F2FE");
@@ -923,12 +938,12 @@ namespace AmatoraObsWpf
                         string switchSceneReq = "{\"op\":6,\"d\":{\"requestType\":\"SetCurrentProgramScene\",\"requestData\":{\"sceneName\":\"" + safeObsSceneName + "\"},\"requestId\":\"switch_replay\"}}";
                         await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, switchSceneReq);
 
-                        // STEP 4: Wait 20 seconds for replay video playback in live stream
-                        AddActivityFeedCard("📺 REPLAY EFIR", "Replay kadr 20 soniya jonli efirga uzatilmoqda...", "#00F2FE");
-                        await Task.Delay(20000);
+                        // STEP 4: Wait exact replay duration (e.g. 18s) for replay video playback
+                        AddActivityFeedCard("📺 REPLAY EFIR", "Replay kadr " + durationSec + " soniya jonli efirga uzatilmoqda...", "#00F2FE");
+                        await Task.Delay(durationSec * 1000);
 
-                        // STEP 5: Switch OBS Program Scene back to MainScene
-                        AddActivityFeedCard("📺 MAIN SCENE", "20 soniya tugadi. OBS Asosiy Efir (MainScene)-ga qaytarildi!", "#00F2FE");
+                        // STEP 5: Switch OBS Program Scene INSTANTLY back to MainScene
+                        AddActivityFeedCard("📺 MAIN SCENE", durationSec + " soniya tugadi. OBS Asosiy Efir (MainScene)-ga DARHOL qaytarildi!", "#00F2FE");
                         string returnMainReq = "{\"op\":6,\"d\":{\"requestType\":\"SetCurrentProgramScene\",\"requestData\":{\"sceneName\":\"MainScene\"},\"requestId\":\"return_main\"}}";
                         await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, returnMainReq);
 
