@@ -38,12 +38,10 @@ namespace AmatoraObsWpf
 
         // Navigation Buttons
         private System.Windows.Controls.Button btnTabObs;
-        private System.Windows.Controls.Button btnTabTablo;
         private System.Windows.Controls.Button btnTabSettings;
 
         // Views
         private Border viewObsAutomation;
-        private Border viewStadiumTablo;
         private Border viewAppSettings;
 
         // Header Controls
@@ -96,7 +94,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v2.4.0)";
+            Title = "AMATORA OBS Replay Engine (v2.5.0)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -124,9 +122,92 @@ namespace AmatoraObsWpf
             StateChanged += MainWindow_StateChanged;
             Closing += MainWindow_Closing;
 
-            // Check OBS Connection & Start Polling
+            // Initialize & Lock current cloud signals so launch stays on MainScene
+            InitializeAndStartPollingAsync();
+        }
+
+        private async void InitializeAndStartPollingAsync()
+        {
+            await FetchAndLockInitialSignalStateAsync();
             CheckObsWebSocketConnectionAsync();
             StartRemotePollingLoop();
+        }
+
+        private async Task FetchAndLockInitialSignalStateAsync()
+        {
+            try
+            {
+                // Lock existing goal signal at startup
+                string goalSignalName = "REMOTE_GOAL_FIELD_" + safeFieldId;
+                string goalUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + goalSignalName + "&select=id,name,logo_url";
+                HttpResponseMessage resGoal = await httpClient.GetAsync(goalUrl);
+                if (resGoal.IsSuccessStatusCode)
+                {
+                    lastSeenGoalSignalTime = await resGoal.Content.ReadAsStringAsync();
+                }
+
+                // Lock existing finish signal at startup
+                string finishSignalName = "REMOTE_FINISH_MATCH_FIELD_" + safeFieldId;
+                string finishUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + finishSignalName + "&select=id,name,logo_url";
+                HttpResponseMessage resFinish = await httpClient.GetAsync(finishUrl);
+                if (resFinish.IsSuccessStatusCode)
+                {
+                    lastSeenFinishSignalTime = await resFinish.Content.ReadAsStringAsync();
+                }
+
+                // Ensure OBS is explicitly set to MainScene on launch
+                await EnsureObsMainSceneOnLaunchAsync();
+            }
+            catch { }
+        }
+
+        private async Task EnsureObsMainSceneOnLaunchAsync()
+        {
+            try
+            {
+                int port = 4455;
+                int.TryParse(safeObsPort, out port);
+                string wsUriStr = "ws://" + safeObsIp + ":" + port;
+
+                using (ClientWebSocket ws = new ClientWebSocket())
+                {
+                    CancellationTokenSource cts = new CancellationTokenSource(3000);
+                    await ws.ConnectAsync(new Uri(wsUriStr), cts.Token);
+                    if (ws.State == WebSocketState.Open)
+                    {
+                        byte[] recvBuf = new byte[4096];
+                        WebSocketReceiveResult recvResult = await ws.ReceiveAsync(new ArraySegment<byte>(recvBuf), cts.Token);
+                        string helloJson = Encoding.UTF8.GetString(recvBuf, 0, recvResult.Count);
+
+                        string identifyPayload = "{\"op\":1,\"d\":{\"rpcVersion\":1}}";
+
+                        if (helloJson.Contains("authentication") && helloJson.Contains("challenge") && helloJson.Contains("salt"))
+                        {
+                            string challenge = ExtractJsonField(helloJson, "challenge");
+                            string salt = ExtractJsonField(helloJson, "salt");
+
+                            if (!string.IsNullOrEmpty(challenge) && !string.IsNullOrEmpty(salt))
+                            {
+                                string pwd = isPasswordVisible ? txtObsPasswordVisible.Text : txtObsPassword.Password;
+                                if (string.IsNullOrEmpty(pwd)) pwd = safeObsPassword;
+
+                                string authHash = CalculateObsAuthHash(pwd, salt, challenge);
+                                identifyPayload = "{\"op\":1,\"d\":{\"rpcVersion\":1,\"authentication\":\"" + authHash + "\"}}";
+                            }
+                        }
+
+                        await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, identifyPayload);
+                        await Task.Delay(200);
+
+                        // Force OBS to MainScene on launch
+                        string returnMainReq = "{\"op\":6,\"d\":{\"requestType\":\"SetCurrentProgramScene\",\"requestData\":{\"sceneName\":\"MainScene\"},\"requestId\":\"launch_main\"}}";
+                        await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, returnMainReq);
+
+                        AddActivityFeedCard("📺 MAIN SCENE", "Dastur ishga tushdi: OBS sahnasi Asosiy Efir (MainScene) holatiga o'rnatildi.", "#00F2FE");
+                    }
+                }
+            }
+            catch { }
         }
 
         private void SetWindowIcon()
@@ -263,7 +344,7 @@ namespace AmatoraObsWpf
         {
             if (txtHeaderFieldBadge != null) txtHeaderFieldBadge.Text = "MAYDON #" + safeFieldId;
             if (txtMainFieldTitle != null) txtMainFieldTitle.Text = "FIELD MONITOR (MAYDON #" + safeFieldId + ")";
-            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.4.0) — Maydon #" + safeFieldId + " faol!";
+            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.5.0) — Maydon #" + safeFieldId + " faol!";
             if (trayIcon != null) trayIcon.Text = "AMATORA Engine (Maydon #" + safeFieldId + ")";
         }
 
@@ -328,18 +409,15 @@ namespace AmatoraObsWpf
             Grid.SetColumn(logoPanel, 0);
             headerGrid.Children.Add(logoPanel);
 
-            // Nav Tabs
+            // Nav Tabs (Removed Tablo)
             StackPanel navPanel = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             btnTabObs = CreateNavButton("🎥 OBS AUTOMATION", true);
-            btnTabTablo = CreateNavButton("📊 TABLO CONTROL", false);
             btnTabSettings = CreateNavButton("⚙️ SOZLAMALAR", false);
 
             btnTabObs.Click += (s, e) => SwitchTab(0);
-            btnTabTablo.Click += (s, e) => SwitchTab(1);
-            btnTabSettings.Click += (s, e) => SwitchTab(2);
+            btnTabSettings.Click += (s, e) => SwitchTab(1);
 
             navPanel.Children.Add(btnTabObs);
-            navPanel.Children.Add(btnTabTablo);
             navPanel.Children.Add(btnTabSettings);
 
             Grid.SetColumn(navPanel, 1);
@@ -392,14 +470,11 @@ namespace AmatoraObsWpf
             mainAppView.Children.Add(contentGrid);
 
             viewObsAutomation = BuildObsAutomationTabView();
-            viewStadiumTablo = BuildStadiumTabloView();
             viewAppSettings = BuildSettingsTabView();
 
-            viewStadiumTablo.Visibility = Visibility.Collapsed;
             viewAppSettings.Visibility = Visibility.Collapsed;
 
             contentGrid.Children.Add(viewObsAutomation);
-            contentGrid.Children.Add(viewStadiumTablo);
             contentGrid.Children.Add(viewAppSettings);
         }
 
@@ -426,7 +501,7 @@ namespace AmatoraObsWpf
             };
             txtEngineStatusSub = new TextBlock
             {
-                Text = "AMATORA OBS Replay Engine (v2.4.0) — Maydon #" + safeFieldId + " faol!",
+                Text = "AMATORA OBS Replay Engine (v2.5.0) — Maydon #" + safeFieldId + " faol!",
                 FontSize = 13,
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(140, 140, 170)),
                 Margin = new Thickness(0, 4, 0, 0)
@@ -507,7 +582,7 @@ namespace AmatoraObsWpf
             scrollActivityFeed.Content = pnlActivityFeed;
             feedBorder.Child = scrollActivityFeed;
 
-            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.4.0) tushdi! Maydon #" + safeFieldId + " — System Tray Logo & Desktop Brand Icon faol!", "#00F2FE");
+            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.5.0) tushdi! Maydon #" + safeFieldId + " — MainScene holatida jonli signal kutilmoqda...", "#00F2FE");
 
             return b;
         }
@@ -676,29 +751,13 @@ namespace AmatoraObsWpf
             };
         }
 
-        private Border BuildStadiumTabloView()
-        {
-            Border b = new Border { Margin = new Thickness(20) };
-            TextBlock tb = new TextBlock
-            {
-                Text = "📊 STADION TABLOSI (HDMI Offline Boshqaruv)",
-                FontSize = 18,
-                FontWeight = FontWeights.Bold,
-                Foreground = System.Windows.Media.Brushes.White
-            };
-            b.Child = tb;
-            return b;
-        }
-
         private void SwitchTab(int tabIndex)
         {
             viewObsAutomation.Visibility = tabIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
-            viewStadiumTablo.Visibility = tabIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
-            viewAppSettings.Visibility = tabIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
+            viewAppSettings.Visibility = tabIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
 
             btnTabObs.Foreground = new SolidColorBrush(tabIndex == 0 ? System.Windows.Media.Color.FromRgb(0, 242, 254) : System.Windows.Media.Color.FromRgb(160, 160, 190));
-            btnTabTablo.Foreground = new SolidColorBrush(tabIndex == 1 ? System.Windows.Media.Color.FromRgb(0, 242, 254) : System.Windows.Media.Color.FromRgb(160, 160, 190));
-            btnTabSettings.Foreground = new SolidColorBrush(tabIndex == 2 ? System.Windows.Media.Color.FromRgb(0, 242, 254) : System.Windows.Media.Color.FromRgb(160, 160, 190));
+            btnTabSettings.Foreground = new SolidColorBrush(tabIndex == 1 ? System.Windows.Media.Color.FromRgb(0, 242, 254) : System.Windows.Media.Color.FromRgb(160, 160, 190));
         }
 
         private void AddActivityFeedCard(string tag, string message, string hexColor)
