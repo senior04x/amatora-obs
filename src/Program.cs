@@ -32,9 +32,19 @@ namespace AmatoraObsWpf
 
     public class MainWindow : Window
     {
-        // UI Containers
+        // UI Views
         private Grid mainGrid;
+        private Grid loginView;
         private Grid mainAppView;
+
+        // Login Controls
+        private System.Windows.Controls.TextBox txtLoginUsername;
+        private PasswordBox txtLoginPassword;
+        private System.Windows.Controls.TextBox txtLoginPasswordVisible;
+        private System.Windows.Controls.Button btnLoginTogglePassword;
+        private System.Windows.Controls.Button btnPerformLogin;
+        private TextBlock txtLoginError;
+        private bool isLoginPasswordVisible = false;
 
         // Navigation Buttons
         private System.Windows.Controls.Button btnTabObs;
@@ -45,9 +55,11 @@ namespace AmatoraObsWpf
         private Border viewAppSettings;
 
         // Header Controls
+        private TextBlock txtHeaderOrgBadge;
         private TextBlock txtHeaderFieldBadge;
         private Border badgeObsStatus;
         private TextBlock txtObsStatusBadgeText;
+        private System.Windows.Controls.Button btnLogout;
 
         // Status Panel Controls
         private TextBlock txtMainFieldTitle;
@@ -79,7 +91,9 @@ namespace AmatoraObsWpf
 
         // Config & Runtime State
         private string configFilePath;
-        private string safeOrgId = "";
+        private string safeUsername = "";
+        private string safeOrgId = "1";
+        private string safeOrgName = "";
         private string safeObsIp = "127.0.0.1";
         private string safeObsPort = "4455";
         private string safeObsPassword = "";
@@ -88,6 +102,7 @@ namespace AmatoraObsWpf
         private string safeFolder = @"C:\Replays";
         private string safeFieldId = "1";
 
+        private bool isLoggedIn = false;
         private bool isServiceRunning = true;
         private string lastSeenGoalSignalTime = "";
         private string lastSeenFinishSignalTime = "";
@@ -98,7 +113,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v2.7.0 Multi-Tenant)";
+            Title = "AMATORA OBS Replay Engine (v2.8.0 Login System)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -126,8 +141,298 @@ namespace AmatoraObsWpf
             StateChanged += MainWindow_StateChanged;
             Closing += MainWindow_Closing;
 
-            // Initialize & Lock current cloud signals so launch stays on MainScene
+            if (isLoggedIn)
+            {
+                ShowMainAppView();
+            }
+            else
+            {
+                ShowLoginView();
+            }
+        }
+
+        private void BuildUI()
+        {
+            mainGrid = new Grid();
+            Content = mainGrid;
+
+            BuildLoginView();
+
+            mainAppView = new Grid();
+            mainAppView.RowDefinitions.Add(new RowDefinition { Height = new GridLength(65) });
+            mainAppView.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            mainGrid.Children.Add(mainAppView);
+
+            BuildHeaderView();
+            BuildContentView();
+            UpdateAllFieldLabels();
+        }
+
+        private void BuildLoginView()
+        {
+            loginView = new Grid
+            {
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(15, 15, 26))
+            };
+            mainGrid.Children.Add(loginView);
+
+            Border card = new Border
+            {
+                Width = 440,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(22, 22, 37)),
+                CornerRadius = new CornerRadius(16),
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 65)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(30)
+            };
+            loginView.Children.Add(card);
+
+            StackPanel sp = new StackPanel();
+            card.Child = sp;
+
+            // Brand Header
+            TextBlock txtLogo = new TextBlock
+            {
+                Text = "⚡ AMATORA ENGINE",
+                FontSize = 24,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            sp.Children.Add(txtLogo);
+
+            TextBlock txtSub = new TextBlock
+            {
+                Text = "Tashkilot hisobiga kirish (Admin Login)",
+                FontSize = 13,
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(140, 140, 170)),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 25)
+            };
+            sp.Children.Add(txtSub);
+
+            // Error Msg
+            txtLoginError = new TextBlock
+            {
+                Text = "",
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 68, 68)),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 10),
+                Visibility = Visibility.Collapsed
+            };
+            sp.Children.Add(txtLoginError);
+
+            // Username Label & Input
+            sp.Children.Add(CreateFormLabel("🔑 Tashkilot Logini / Email:"));
+            txtLoginUsername = CreateFormInput(safeUsername);
+            sp.Children.Add(txtLoginUsername);
+
+            // Password Label & Input
+            sp.Children.Add(CreateFormLabel("🔒 Parol:"));
+            Grid pwdGrid = new Grid();
+            pwdGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            pwdGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            txtLoginPassword = new PasswordBox
+            {
+                FontSize = 14,
+                Padding = new Thickness(10, 8, 10, 8),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 30, 50)),
+                Foreground = System.Windows.Media.Brushes.White,
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(50, 50, 80)),
+                BorderThickness = new Thickness(1),
+                Margin = new Thickness(0, 0, 10, 20)
+            };
+            Grid.SetColumn(txtLoginPassword, 0);
+            pwdGrid.Children.Add(txtLoginPassword);
+
+            txtLoginPasswordVisible = new System.Windows.Controls.TextBox
+            {
+                FontSize = 14,
+                Padding = new Thickness(10, 8, 10, 8),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 30, 50)),
+                Foreground = System.Windows.Media.Brushes.White,
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(50, 50, 80)),
+                BorderThickness = new Thickness(1),
+                Margin = new Thickness(0, 0, 10, 20),
+                Visibility = Visibility.Collapsed
+            };
+            Grid.SetColumn(txtLoginPasswordVisible, 0);
+            pwdGrid.Children.Add(txtLoginPasswordVisible);
+
+            btnLoginTogglePassword = new System.Windows.Controls.Button
+            {
+                Content = "👁️",
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Padding = new Thickness(10, 6, 10, 6),
+                Height = 38,
+                Margin = new Thickness(0, 0, 0, 20),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 70)),
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
+                BorderThickness = new Thickness(1),
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+            btnLoginTogglePassword.Click += (s, e) =>
+            {
+                if (isLoginPasswordVisible)
+                {
+                    txtLoginPassword.Password = txtLoginPasswordVisible.Text;
+                    txtLoginPassword.Visibility = Visibility.Visible;
+                    txtLoginPasswordVisible.Visibility = Visibility.Collapsed;
+                    btnLoginTogglePassword.Content = "👁️";
+                    isLoginPasswordVisible = false;
+                }
+                else
+                {
+                    txtLoginPasswordVisible.Text = txtLoginPassword.Password;
+                    txtLoginPasswordVisible.Visibility = Visibility.Visible;
+                    txtLoginPassword.Visibility = Visibility.Collapsed;
+                    btnLoginTogglePassword.Content = "🙈";
+                    isLoginPasswordVisible = true;
+                }
+            };
+            Grid.SetColumn(btnLoginTogglePassword, 1);
+            pwdGrid.Children.Add(btnLoginTogglePassword);
+
+            sp.Children.Add(pwdGrid);
+
+            // Login Button
+            btnPerformLogin = new System.Windows.Controls.Button
+            {
+                Content = "🔐 TASHKILOTGA KIRISH",
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Foreground = System.Windows.Media.Brushes.Black,
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
+                Padding = new Thickness(20, 12, 20, 12),
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+            btnPerformLogin.Click += async (s, e) => await HandleUserLoginAsync();
+            sp.Children.Add(btnPerformLogin);
+        }
+
+        private async Task HandleUserLoginAsync()
+        {
+            string username = txtLoginUsername.Text.Trim();
+            string pwd = isLoginPasswordVisible ? txtLoginPasswordVisible.Text : txtLoginPassword.Password;
+
+            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(pwd))
+            {
+                txtLoginError.Text = "Login va parolni kiriting!";
+                txtLoginError.Visibility = Visibility.Visible;
+                return;
+            }
+
+            btnPerformLogin.IsEnabled = false;
+            btnPerformLogin.Content = "⏳ TEKSHIRILMOQDA...";
+            txtLoginError.Visibility = Visibility.Collapsed;
+
+            bool success = await PerformSupabaseLoginAsync(username, pwd);
+            if (success)
+            {
+                isLoggedIn = true;
+                safeUsername = username;
+                SaveUserConfigValues();
+                ShowMainAppView();
+            }
+            else
+            {
+                txtLoginError.Text = "❌ Login yoki parol xato kiritildi!";
+                txtLoginError.Visibility = Visibility.Visible;
+                btnPerformLogin.IsEnabled = true;
+                btnPerformLogin.Content = "🔐 TASHKILOTGA KIRISH";
+            }
+        }
+
+        private async Task<bool> PerformSupabaseLoginAsync(string username, string password)
+        {
+            try
+            {
+                string emailValue = username.Contains("@") ? username : (username.Trim() + "@hfl.uz");
+                string authUrl = SupabaseUrl + "/auth/v1/token?grant_type=password";
+                string payload = "{\"email\":\"" + emailValue + "\",\"password\":\"" + password + "\"}";
+
+                using (StringContent content = new StringContent(payload, Encoding.UTF8, "application/json"))
+                {
+                    HttpResponseMessage res = await httpClient.PostAsync(authUrl, content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        string body = await res.Content.ReadAsStringAsync();
+                        string userId = ExtractJsonField(body, "id");
+                        
+                        await FetchOrganizationDetailsForUserAsync(userId);
+                        return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private async Task FetchOrganizationDetailsForUserAsync(string userId)
+        {
+            try
+            {
+                string adminUrl = SupabaseUrl + "/rest/v1/admin_users?id=eq." + userId + "&select=organization_id,role";
+                HttpResponseMessage res = await httpClient.GetAsync(adminUrl);
+                if (res.IsSuccessStatusCode)
+                {
+                    string body = await res.Content.ReadAsStringAsync();
+                    string orgIdStr = ExtractJsonField(body, "organization_id");
+                    if (!string.IsNullOrEmpty(orgIdStr))
+                    {
+                        safeOrgId = orgIdStr;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(safeOrgId))
+                {
+                    string orgUrl = SupabaseUrl + "/rest/v1/organizations?id=eq." + safeOrgId + "&select=id,name,slug";
+                    HttpResponseMessage orgRes = await httpClient.GetAsync(orgUrl);
+                    if (orgRes.IsSuccessStatusCode)
+                    {
+                        string orgBody = await orgRes.Content.ReadAsStringAsync();
+                        string nameStr = ExtractJsonField(orgBody, "name");
+                        if (!string.IsNullOrEmpty(nameStr))
+                        {
+                            safeOrgName = nameStr;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            if (string.IsNullOrEmpty(safeOrgName)) safeOrgName = "Tashkilot #" + safeOrgId;
+        }
+
+        private void ShowLoginView()
+        {
+            loginView.Visibility = Visibility.Visible;
+            mainAppView.Visibility = Visibility.Collapsed;
+        }
+
+        private void ShowMainAppView()
+        {
+            loginView.Visibility = Visibility.Collapsed;
+            mainAppView.Visibility = Visibility.Visible;
+
+            UpdateAllFieldLabels();
             InitializeAndStartPollingAsync();
+        }
+
+        private void UserLogout()
+        {
+            isLoggedIn = false;
+            safeUsername = "";
+            SaveUserConfigValues();
+            ShowLoginView();
         }
 
         private async void InitializeAndStartPollingAsync()
@@ -256,7 +561,7 @@ namespace AmatoraObsWpf
                 trayIcon = new NotifyIcon();
                 System.Drawing.Icon exeIcon = System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location);
                 trayIcon.Icon = exeIcon ?? System.Drawing.SystemIcons.Application;
-                trayIcon.Text = "AMATORA Engine (Maydon #" + safeFieldId + ")";
+                trayIcon.Text = "AMATORA Engine (" + (string.IsNullOrEmpty(safeOrgName) ? "Tashkilot" : safeOrgName) + ")";
                 trayIcon.Visible = true;
 
                 System.Windows.Forms.ContextMenu strip = new System.Windows.Forms.ContextMenu();
@@ -266,10 +571,7 @@ namespace AmatoraObsWpf
                     Activate();
                 });
                 strip.MenuItems.Add("🧹 Replays Papkasini Tozalash", (s, e) => CleanReplaysFolder());
-                strip.MenuItems.Add("❌ Chiqish", (s, e) => {
-                    trayIcon.Visible = false;
-                    Environment.Exit(0);
-                });
+                strip.MenuItems.Add("🚪 Chiqish (Logout)", (s, e) => UserLogout());
 
                 trayIcon.ContextMenu = strip;
                 trayIcon.DoubleClick += (s, e) => {
@@ -288,7 +590,7 @@ namespace AmatoraObsWpf
                 Hide();
                 if (trayIcon != null)
                 {
-                    trayIcon.ShowBalloonTip(2000, "AMATORA Engine", "Dastur fonda ishlashda davom etmoqda (Maydon #" + safeFieldId + ")", ToolTipIcon.Info);
+                    trayIcon.ShowBalloonTip(2000, "AMATORA Engine", "Dastur fonda ishlashda davom etmoqda (" + safeOrgName + ")", ToolTipIcon.Info);
                 }
             }
         }
@@ -311,7 +613,10 @@ namespace AmatoraObsWpf
                     string[] lines = File.ReadAllLines(configFilePath);
                     foreach (string line in lines)
                     {
-                        if (line.StartsWith("OrgId=")) safeOrgId = line.Substring(6).Trim();
+                        if (line.StartsWith("IsLoggedIn=")) isLoggedIn = line.Substring(11).Trim().Equals("True", StringComparison.OrdinalIgnoreCase);
+                        else if (line.StartsWith("Username=")) safeUsername = line.Substring(9).Trim();
+                        else if (line.StartsWith("OrgId=")) safeOrgId = line.Substring(6).Trim();
+                        else if (line.StartsWith("OrgName=")) safeOrgName = line.Substring(8).Trim();
                         else if (line.StartsWith("IP=")) safeObsIp = line.Substring(3).Trim();
                         else if (line.StartsWith("Port=")) safeObsPort = line.Substring(5).Trim();
                         else if (line.StartsWith("Password=")) safeObsPassword = line.Substring(9).Trim();
@@ -334,17 +639,20 @@ namespace AmatoraObsWpf
             {
                 string pwdToSave = isPasswordVisible ? txtObsPasswordVisible.Text : txtObsPassword.Password;
 
-                safeOrgId = string.IsNullOrWhiteSpace(txtOrgId.Text) ? "" : txtOrgId.Text.Trim();
-                safeObsIp = string.IsNullOrWhiteSpace(txtObsIp.Text) ? "127.0.0.1" : txtObsIp.Text.Trim();
-                safeObsPort = string.IsNullOrWhiteSpace(txtObsPort.Text) ? "4455" : txtObsPort.Text.Trim();
-                safeObsPassword = pwdToSave;
-                safeObsSceneName = string.IsNullOrWhiteSpace(txtObsSceneName.Text) ? "ReplayBuffer" : txtObsSceneName.Text.Trim();
-                safeReplayDurationSec = string.IsNullOrWhiteSpace(txtReplayDuration.Text) ? "18" : txtReplayDuration.Text.Trim();
-                safeFolder = string.IsNullOrWhiteSpace(txtFolder.Text) ? @"C:\Replays" : txtFolder.Text.Trim();
-                safeFieldId = string.IsNullOrWhiteSpace(txtFieldId.Text) ? "1" : txtFieldId.Text.Trim();
+                if (txtOrgId != null) safeOrgId = string.IsNullOrWhiteSpace(txtOrgId.Text) ? safeOrgId : txtOrgId.Text.Trim();
+                if (txtObsIp != null) safeObsIp = string.IsNullOrWhiteSpace(txtObsIp.Text) ? "127.0.0.1" : txtObsIp.Text.Trim();
+                if (txtObsPort != null) safeObsPort = string.IsNullOrWhiteSpace(txtObsPort.Text) ? "4455" : txtObsPort.Text.Trim();
+                if (txtObsPassword != null) safeObsPassword = pwdToSave;
+                if (txtObsSceneName != null) safeObsSceneName = string.IsNullOrWhiteSpace(txtObsSceneName.Text) ? "ReplayBuffer" : txtObsSceneName.Text.Trim();
+                if (txtReplayDuration != null) safeReplayDurationSec = string.IsNullOrWhiteSpace(txtReplayDuration.Text) ? "18" : txtReplayDuration.Text.Trim();
+                if (txtFolder != null) safeFolder = string.IsNullOrWhiteSpace(txtFolder.Text) ? @"C:\Replays" : txtFolder.Text.Trim();
+                if (txtFieldId != null) safeFieldId = string.IsNullOrWhiteSpace(txtFieldId.Text) ? "1" : txtFieldId.Text.Trim();
 
                 StringBuilder sb = new StringBuilder();
+                sb.AppendLine("IsLoggedIn=" + isLoggedIn);
+                sb.AppendLine("Username=" + safeUsername);
                 sb.AppendLine("OrgId=" + safeOrgId);
+                sb.AppendLine("OrgName=" + safeOrgName);
                 sb.AppendLine("IP=" + safeObsIp);
                 sb.AppendLine("Port=" + safeObsPort);
                 sb.AppendLine("Password=" + safeObsPassword);
@@ -357,40 +665,19 @@ namespace AmatoraObsWpf
 
                 // Update UI Labels & Tray Tooltip
                 UpdateAllFieldLabels();
-
-                // Re-check OBS connection with new settings
-                CheckObsWebSocketConnectionAsync();
-
-                System.Windows.MessageBox.Show("✅ SOZLAMALAR MUVAFFAQIYATLI SAQLANDI!\n\nMaydon raqami: " + safeFieldId + "-MAYDON\nTashkilot ID: " + (string.IsNullOrEmpty(safeOrgId) ? "Barchasi (Default)" : safeOrgId), "AMATORA OBS", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            catch (Exception ex)
-            {
-                System.Windows.MessageBox.Show("❌ Sozlamalarni saqlashda xatolik: " + ex.Message, "Xatolik", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            catch { }
         }
 
         private void UpdateAllFieldLabels()
         {
-            string orgTag = string.IsNullOrEmpty(safeOrgId) ? "" : (" [" + safeOrgId + "]");
-            if (txtHeaderFieldBadge != null) txtHeaderFieldBadge.Text = "MAYDON #" + safeFieldId + orgTag;
-            if (txtMainFieldTitle != null) txtMainFieldTitle.Text = "FIELD MONITOR (MAYDON #" + safeFieldId + orgTag + ")";
-            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.7.0 Multi-Tenant) — Maydon #" + safeFieldId + orgTag + " faol!";
-            if (trayIcon != null) trayIcon.Text = "AMATORA Engine (Maydon #" + safeFieldId + orgTag + ")";
-        }
-
-        private void BuildUI()
-        {
-            mainGrid = new Grid();
-            Content = mainGrid;
-
-            mainAppView = new Grid();
-            mainAppView.RowDefinitions.Add(new RowDefinition { Height = new GridLength(65) });
-            mainAppView.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            mainGrid.Children.Add(mainAppView);
-
-            BuildHeaderView();
-            BuildContentView();
-            UpdateAllFieldLabels();
+            string displayOrg = string.IsNullOrEmpty(safeOrgName) ? ("TASHKILOT #" + safeOrgId) : safeOrgName.ToUpper();
+            
+            if (txtHeaderOrgBadge != null) txtHeaderOrgBadge.Text = "🏢 " + displayOrg;
+            if (txtHeaderFieldBadge != null) txtHeaderFieldBadge.Text = "MAYDON #" + safeFieldId;
+            if (txtMainFieldTitle != null) txtMainFieldTitle.Text = displayOrg + " — MONITOR (MAYDON #" + safeFieldId + ")";
+            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Engine — " + displayOrg + " [Maydon #" + safeFieldId + "] faol!";
+            if (trayIcon != null) trayIcon.Text = "AMATORA Engine (" + displayOrg + " - Maydon #" + safeFieldId + ")";
         }
 
         private void BuildHeaderView()
@@ -417,12 +704,25 @@ namespace AmatoraObsWpf
             TextBlock txtLogo = new TextBlock
             {
                 Text = "⚡ AMATORA",
-                FontSize = 22,
+                FontSize = 20,
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
                 VerticalAlignment = VerticalAlignment.Center
             };
             logoPanel.Children.Add(txtLogo);
+
+            txtHeaderOrgBadge = new TextBlock
+            {
+                Text = "🏢 TASHKILOT",
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 0, 242, 254)),
+                Padding = new Thickness(8, 4, 8, 4),
+                Margin = new Thickness(10, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            logoPanel.Children.Add(txtHeaderOrgBadge);
 
             txtHeaderFieldBadge = new TextBlock
             {
@@ -432,7 +732,7 @@ namespace AmatoraObsWpf
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 200, 0)),
                 Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 255, 200, 0)),
                 Padding = new Thickness(8, 4, 8, 4),
-                Margin = new Thickness(12, 0, 0, 0),
+                Margin = new Thickness(8, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center
             };
             logoPanel.Children.Add(txtHeaderFieldBadge);
@@ -453,7 +753,9 @@ namespace AmatoraObsWpf
             Grid.SetColumn(navPanel, 1);
             headerGrid.Children.Add(navPanel);
 
-            // OBS Status Indicator Badge (Header Right)
+            // Right Panel (OBS Badge & Logout)
+            StackPanel rightPanel = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
             badgeObsStatus = new Border
             {
                 Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 255, 68, 68)),
@@ -461,6 +763,7 @@ namespace AmatoraObsWpf
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
                 Padding = new Thickness(10, 6, 10, 6),
+                Margin = new Thickness(0, 0, 10, 0),
                 VerticalAlignment = VerticalAlignment.Center
             };
 
@@ -472,8 +775,25 @@ namespace AmatoraObsWpf
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 68, 68))
             };
             badgeObsStatus.Child = txtObsStatusBadgeText;
-            Grid.SetColumn(badgeObsStatus, 2);
-            headerGrid.Children.Add(badgeObsStatus);
+            rightPanel.Children.Add(badgeObsStatus);
+
+            btnLogout = new System.Windows.Controls.Button
+            {
+                Content = "🚪 CHIQISH",
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 68, 68)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(30, 255, 68, 68)),
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 68, 68)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 6, 10, 6),
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+            btnLogout.Click += (s, e) => UserLogout();
+            rightPanel.Children.Add(btnLogout);
+
+            Grid.SetColumn(rightPanel, 2);
+            headerGrid.Children.Add(rightPanel);
         }
 
         private System.Windows.Controls.Button CreateNavButton(string text, bool isActive)
@@ -531,7 +851,7 @@ namespace AmatoraObsWpf
             };
             txtEngineStatusSub = new TextBlock
             {
-                Text = "AMATORA OBS Replay Engine (v2.7.0 Multi-Tenant) — Maydon #" + safeFieldId + " faol!",
+                Text = "AMATORA OBS Engine — Maydon #" + safeFieldId + " faol!",
                 FontSize = 13,
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(140, 140, 170)),
                 Margin = new Thickness(0, 4, 0, 0)
@@ -612,7 +932,7 @@ namespace AmatoraObsWpf
             scrollActivityFeed.Content = pnlActivityFeed;
             feedBorder.Child = scrollActivityFeed;
 
-            AddActivityFeedCard("🚀 MULTI-TENANT SYSTEM", "AMATORA Engine (v2.7.0) tushdi! Tashkilotlar o'zaro 100% ajratilgan va himoyalangan!", "#00F2FE");
+            AddActivityFeedCard("🚀 AMATORA AUTH", "Dasturga avtorizatsiyadan muvaffaqiyatli o'tildi! Tashkilot: " + safeOrgName, "#00F2FE");
 
             return b;
         }
@@ -637,7 +957,7 @@ namespace AmatoraObsWpf
             container.Children.Add(title);
 
             // Org ID
-            container.Children.Add(CreateFormLabel("🏢 TASHKILOT ID / SLUG (Multi-Tenant izolyatsiya uchun):"));
+            container.Children.Add(CreateFormLabel("🏢 TASHKILOT ID / SLUG:"));
             txtOrgId = CreateFormInput(safeOrgId);
             container.Children.Add(txtOrgId);
 
@@ -738,7 +1058,11 @@ namespace AmatoraObsWpf
                 Margin = new Thickness(0, 20, 0, 0),
                 Cursor = System.Windows.Input.Cursors.Hand
             };
-            btnSaveConfig.Click += (s, e) => SaveUserConfigValues();
+            btnSaveConfig.Click += (s, e) =>
+            {
+                SaveUserConfigValues();
+                System.Windows.MessageBox.Show("✅ SOZLAMALAR MUVAFFAQIYATLI SAQLANDI!", "AMATORA OBS", MessageBoxButton.OK, MessageBoxImage.Information);
+            };
             container.Children.Add(btnSaveConfig);
 
             return b;
@@ -1145,7 +1469,7 @@ namespace AmatoraObsWpf
                 {
                     try
                     {
-                        if (isServiceRunning)
+                        if (isServiceRunning && isLoggedIn)
                         {
                             await PollSupabaseRemoteFieldSignal();
                         }
@@ -1177,7 +1501,6 @@ namespace AmatoraObsWpf
                         string matchId = ExtractJsonField(body, "match_id");
                         string eventId = ExtractJsonField(body, "event_id");
 
-                        // If safeOrgId is set on this PC, verify signal belongs to this org
                         if (string.IsNullOrWhiteSpace(safeOrgId) || safeOrgId == "default" || string.IsNullOrWhiteSpace(signalOrgId) || signalOrgId == safeOrgId)
                         {
                             await ExecuteFullGoalReplayWorkflowAsync(matchId, eventId, signalOrgId);
@@ -1200,7 +1523,7 @@ namespace AmatoraObsWpf
                     {
                         lastSeenFinishSignalTime = body;
 
-                        string signalOrgId = ExtractJsonField(body, "org_id");
+                        string signalOrgId = ExtractJsonField(body, "signal_org_id");
                         if (string.IsNullOrWhiteSpace(safeOrgId) || safeOrgId == "default" || string.IsNullOrWhiteSpace(signalOrgId) || signalOrgId == safeOrgId)
                         {
                             CleanReplaysFolder();
