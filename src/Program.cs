@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -79,7 +80,6 @@ namespace AmatoraObsWpf
 
         private bool isServiceRunning = true;
         private bool isObsConnected = false;
-        private ClientWebSocket obsClientWebSocket;
         private string lastSeenSignalTime = "";
         private HttpClient httpClient;
 
@@ -380,7 +380,7 @@ namespace AmatoraObsWpf
                 Padding = new Thickness(16, 9, 16, 9),
                 Cursor = Cursors.Hand
             };
-            btnTestReplay.Click += async (s, e) => await TriggerObsReplayBufferAsync(true);
+            btnTestReplay.Click += async (s, e) => await SendObsSaveReplayCommandAsync(true);
             btnPanel.Children.Add(btnTestReplay);
 
             Grid.SetColumn(btnPanel, 1);
@@ -638,44 +638,31 @@ namespace AmatoraObsWpf
 
         private async void CheckObsWebSocketConnectionAsync()
         {
-            bool connected = await ConnectToObsWebSocketAsync();
+            bool connected = await TestObsWebSocketHandshakeAsync();
             UpdateObsStatusUI(connected);
         }
 
-        private async Task<bool> ConnectToObsWebSocketAsync()
+        private async Task<bool> TestObsWebSocketHandshakeAsync()
         {
             try
             {
-                if (obsClientWebSocket != null)
+                using (ClientWebSocket ws = new ClientWebSocket())
                 {
-                    try { obsClientWebSocket.Dispose(); } catch { }
-                }
+                    int port = 4455;
+                    int.TryParse(safeObsPort, out port);
 
-                obsClientWebSocket = new ClientWebSocket();
-                int port = 4455;
-                int.TryParse(safeObsPort, out port);
+                    Uri wsUri = new Uri("ws://" + safeObsIp + ":" + port);
+                    CancellationTokenSource cts = new CancellationTokenSource(3000);
 
-                string wsUriStr = "ws://" + safeObsIp + ":" + port;
-                Uri wsUri = new Uri(wsUriStr);
-
-                CancellationTokenSource cts = new CancellationTokenSource(3000);
-                await obsClientWebSocket.ConnectAsync(wsUri, cts.Token);
-
-                if (obsClientWebSocket.State == WebSocketState.Open)
-                {
-                    // Send obs-websocket Hello/Identify RPC
-                    string identifyMsg = "{\"op\":1,\"d\":{\"rpcVersion\":1}}";
-                    byte[] sendBytes = Encoding.UTF8.GetBytes(identifyMsg);
-                    await obsClientWebSocket.SendAsync(new ArraySegment<byte>(sendBytes), WebSocketMessageType.Text, true, CancellationToken.None);
-
-                    isObsConnected = true;
-                    return true;
+                    await ws.ConnectAsync(wsUri, cts.Token);
+                    if (ws.State == WebSocketState.Open)
+                    {
+                        isObsConnected = true;
+                        return true;
+                    }
                 }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine("OBS Connection exception: " + ex.Message);
-            }
+            catch { }
 
             isObsConnected = false;
             return false;
@@ -702,40 +689,113 @@ namespace AmatoraObsWpf
             });
         }
 
-        private async Task TriggerObsReplayBufferAsync(bool isManualTest = false)
+        private string CalculateObsAuthHash(string password, string salt, string challenge)
         {
-            if (!isObsConnected)
+            using (SHA256 sha256 = SHA256.Create())
             {
-                bool reconnected = await ConnectToObsWebSocketAsync();
-                UpdateObsStatusUI(reconnected);
+                byte[] secretBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password + salt));
+                string secretBase64 = Convert.ToBase64String(secretBytes);
+                byte[] authBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(secretBase64 + challenge));
+                return Convert.ToBase64String(authBytes);
             }
+        }
 
-            if (isObsConnected && obsClientWebSocket != null && obsClientWebSocket.State == WebSocketState.Open)
+        private async Task SendObsSaveReplayCommandAsync(bool isManualTest)
+        {
+            int port = 4455;
+            int.TryParse(safeObsPort, out port);
+            string wsUriStr = "ws://" + safeObsIp + ":" + port;
+
+            try
             {
-                try
+                using (ClientWebSocket ws = new ClientWebSocket())
                 {
-                    string reqPayload = "{\"op\":6,\"d\":{\"requestType\":\"SaveReplayBuffer\",\"requestId\":\"save_replay_req\"}}";
-                    byte[] bytes = Encoding.UTF8.GetBytes(reqPayload);
-                    await obsClientWebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                    CancellationTokenSource cts = new CancellationTokenSource(4000);
+                    await ws.ConnectAsync(new Uri(wsUriStr), cts.Token);
 
-                    if (isManualTest)
+                    if (ws.State == WebSocketState.Open)
                     {
-                        AddActivityFeedCard("🎬 TEST REPLAY", "TEST REPLAY TUGMASI BOSILDI! Local OBS Replay Buffer saqlandi! (Port " + safeObsPort + ")", "#00F2FE");
+                        isObsConnected = true;
+                        UpdateObsStatusUI(true);
+
+                        // Read op:0 (Hello) message from OBS
+                        byte[] recvBuf = new byte[4096];
+                        WebSocketReceiveResult recvResult = await ws.ReceiveAsync(new ArraySegment<byte>(recvBuf), cts.Token);
+                        string helloJson = Encoding.UTF8.GetString(recvBuf, 0, recvResult.Count);
+
+                        string identifyPayload = "{\"op\":1,\"d\":{\"rpcVersion\":1}}";
+
+                        // Check if OBS requires Authentication
+                        if (helloJson.Contains("authentication") && helloJson.Contains("challenge") && helloJson.Contains("salt"))
+                        {
+                            string challenge = ExtractJsonField(helloJson, "challenge");
+                            string salt = ExtractJsonField(helloJson, "salt");
+
+                            if (!string.IsNullOrEmpty(challenge) && !string.IsNullOrEmpty(salt))
+                            {
+                                string pwd = isPasswordVisible ? txtObsPasswordVisible.Text : txtObsPassword.Password;
+                                if (string.IsNullOrEmpty(pwd)) pwd = safeObsPassword;
+
+                                string authHash = CalculateObsAuthHash(pwd, salt, challenge);
+                                identifyPayload = "{\"op\":1,\"d\":{\"rpcVersion\":1,\"authentication\":\"" + authHash + "\"}}";
+                            }
+                        }
+
+                        // Send op:1 (Identify)
+                        byte[] idBytes = Encoding.UTF8.GetBytes(identifyPayload);
+                        await ws.SendAsync(new ArraySegment<byte>(idBytes), WebSocketMessageType.Text, true, cts.Token);
+
+                        // Small delay for OBS session identification
+                        await Task.Delay(200);
+
+                        // Send op:6 (SaveReplayBuffer request)
+                        string saveReq = "{\"op\":6,\"d\":{\"requestType\":\"SaveReplayBuffer\",\"requestId\":\"save_rb_id\"}}";
+                        byte[] saveBytes = Encoding.UTF8.GetBytes(saveReq);
+                        await ws.SendAsync(new ArraySegment<byte>(saveBytes), WebSocketMessageType.Text, true, cts.Token);
+
+                        if (isManualTest)
+                        {
+                            AddActivityFeedCard("🎬 TEST REPLAY", "TEST REPLAY TUGMASI BOSILDI! Local OBS Replay Buffer saqlandi! (Port " + safeObsPort + ")", "#00F2FE");
+                        }
+                        else
+                        {
+                            AddActivityFeedCard("⚽ GOL REPLAY", "GOL REPLAY SIGNAL KELDI! Local OBS Replay Buffer saqlandi! (Maydon #" + safeFieldId + ")", "#00F2FE");
+                        }
                     }
                     else
                     {
-                        AddActivityFeedCard("⚽ GOL REPLAY", "GOL REPLAY SIGNAL KELDI! Local OBS Replay Buffer saqlandi! (Maydon #" + safeFieldId + ")", "#00F2FE");
+                        isObsConnected = false;
+                        UpdateObsStatusUI(false);
+                        AddActivityFeedCard("🔴 OBS ULANMAGAN", "OBS WebSocket-ga ulana olmadi. OBS va WebSocket yoqilganini tekshiring (Port: " + safeObsPort + ")", "#FF4444");
                     }
                 }
-                catch (Exception ex)
+            }
+            catch (Exception ex)
+            {
+                isObsConnected = false;
+                UpdateObsStatusUI(false);
+                AddActivityFeedCard("⚠️ OBS WEBSOCKET XATOSI", "OBS Replay xatosi (Port " + safeObsPort + "): " + ex.Message, "#FFC800");
+            }
+        }
+
+        private string ExtractJsonField(string json, string fieldName)
+        {
+            try
+            {
+                string searchPattern = "\"" + fieldName + "\":\"";
+                int idx = json.IndexOf(searchPattern);
+                if (idx != -1)
                 {
-                    AddActivityFeedCard("⚠️ OBS WEBSOCKET XATOSI", "OBS Replay yuborishda xatolik: " + ex.Message, "#FFC800");
+                    int start = idx + searchPattern.Length;
+                    int end = json.IndexOf("\"", start);
+                    if (end != -1)
+                    {
+                        return json.Substring(start, end - start);
+                    }
                 }
             }
-            else
-            {
-                AddActivityFeedCard("🔴 OBS ULANMAGAN", "OBS Studio ishga tushirilmagan yoki WebSocket porti (" + safeObsPort + ") yopiq. OBS va WebSocket sozlamasini tekshiring!", "#FF4444");
-            }
+            catch { }
+            return "";
         }
 
         private void StartRemotePollingLoop()
@@ -772,7 +832,7 @@ namespace AmatoraObsWpf
                     if (body != lastSeenSignalTime)
                     {
                         lastSeenSignalTime = body;
-                        await TriggerObsReplayBufferAsync(false);
+                        await SendObsSaveReplayCommandAsync(false);
                     }
                 }
             }
