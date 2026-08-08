@@ -5,18 +5,21 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.WebSockets;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace AmatoraObsWpf
 {
-    public class App : Application
+    public class App : System.Windows.Application
     {
         [STAThread]
         public static void Main()
@@ -34,9 +37,9 @@ namespace AmatoraObsWpf
         private Grid mainAppView;
 
         // Navigation Buttons
-        private Button btnTabObs;
-        private Button btnTabTablo;
-        private Button btnTabSettings;
+        private System.Windows.Controls.Button btnTabObs;
+        private System.Windows.Controls.Button btnTabTablo;
+        private System.Windows.Controls.Button btnTabSettings;
 
         // Views
         private Border viewObsAutomation;
@@ -51,25 +54,28 @@ namespace AmatoraObsWpf
         // Status Panel Controls
         private TextBlock txtMainFieldTitle;
         private TextBlock txtEngineStatusSub;
-        private Button btnTestReplay;
-        private Button btnCheckObsConnection;
-        private Button btnCleanFolder;
+        private System.Windows.Controls.Button btnTestReplay;
+        private System.Windows.Controls.Button btnCheckObsConnection;
+        private System.Windows.Controls.Button btnCleanFolder;
 
         // Settings Controls
-        private TextBox txtObsIp;
-        private TextBox txtObsPort;
+        private System.Windows.Controls.TextBox txtObsIp;
+        private System.Windows.Controls.TextBox txtObsPort;
         private PasswordBox txtObsPassword;
-        private TextBox txtObsPasswordVisible;
-        private Button btnTogglePassword;
+        private System.Windows.Controls.TextBox txtObsPasswordVisible;
+        private System.Windows.Controls.Button btnTogglePassword;
         private bool isPasswordVisible = false;
-        private TextBox txtObsSceneName;
-        private TextBox txtFolder;
-        private TextBox txtFieldId;
-        private Button btnSaveConfig;
+        private System.Windows.Controls.TextBox txtObsSceneName;
+        private System.Windows.Controls.TextBox txtFolder;
+        private System.Windows.Controls.TextBox txtFieldId;
+        private System.Windows.Controls.Button btnSaveConfig;
 
         // Activity Feed
         private StackPanel pnlActivityFeed;
-        private ScrollViewer scrollActivityFeed;
+        private System.Windows.Controls.ScrollViewer scrollActivityFeed;
+
+        // System Tray & App Icon
+        private NotifyIcon trayIcon;
 
         // Config & Runtime State
         private string configFilePath;
@@ -90,11 +96,11 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v2.3.0)";
+            Title = "AMATORA OBS Replay Engine (v2.4.0)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            Background = new SolidColorBrush(Color.FromRgb(15, 15, 26));
+            Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(15, 15, 26));
 
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             string amatoraFolder = System.IO.Path.Combine(appData, "AMATORA");
@@ -110,11 +116,87 @@ namespace AmatoraObsWpf
             httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SupabaseKey);
 
             LoadSavedConfig();
+            SetWindowIcon();
             BuildUI();
-            
+            SetupSystemTrayIcon();
+
+            // Handle Minimize to Tray
+            StateChanged += MainWindow_StateChanged;
+            Closing += MainWindow_Closing;
+
             // Check OBS Connection & Start Polling
             CheckObsWebSocketConnectionAsync();
             StartRemotePollingLoop();
+        }
+
+        private void SetWindowIcon()
+        {
+            try
+            {
+                System.Drawing.Icon exeIcon = System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location);
+                if (exeIcon != null)
+                {
+                    Icon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                        exeIcon.Handle,
+                        Int32Rect.Empty,
+                        BitmapSizeOptions.FromEmptyOptions()
+                    );
+                }
+            }
+            catch { }
+        }
+
+        private void SetupSystemTrayIcon()
+        {
+            try
+            {
+                trayIcon = new NotifyIcon();
+                System.Drawing.Icon exeIcon = System.Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location);
+                trayIcon.Icon = exeIcon ?? System.Drawing.SystemIcons.Application;
+                trayIcon.Text = "AMATORA Engine (Maydon #" + safeFieldId + ")";
+                trayIcon.Visible = true;
+
+                System.Windows.Forms.ContextMenu strip = new System.Windows.Forms.ContextMenu();
+                strip.MenuItems.Add("⚡ Ochish", (s, e) => {
+                    Show();
+                    WindowState = WindowState.Normal;
+                    Activate();
+                });
+                strip.MenuItems.Add("🧹 Replays Papkasini Tozalash", (s, e) => CleanReplaysFolder());
+                strip.MenuItems.Add("❌ Chiqish", (s, e) => {
+                    trayIcon.Visible = false;
+                    Environment.Exit(0);
+                });
+
+                trayIcon.ContextMenu = strip;
+                trayIcon.DoubleClick += (s, e) => {
+                    Show();
+                    WindowState = WindowState.Normal;
+                    Activate();
+                };
+            }
+            catch { }
+        }
+
+        private void MainWindow_StateChanged(object sender, EventArgs e)
+        {
+            if (WindowState == WindowState.Minimized)
+            {
+                Hide();
+                if (trayIcon != null)
+                {
+                    trayIcon.ShowBalloonTip(2000, "AMATORA Engine", "Dastur fonda ishlashda davom etmoqda (Maydon #" + safeFieldId + ")", ToolTipIcon.Info);
+                }
+            }
+        }
+
+        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            if (trayIcon != null)
+            {
+                trayIcon.Visible = false;
+                trayIcon.Dispose();
+            }
         }
 
         private void LoadSavedConfig()
@@ -163,17 +245,17 @@ namespace AmatoraObsWpf
 
                 File.WriteAllText(configFilePath, sb.ToString());
 
-                // Update UI Labels
+                // Update UI Labels & Tray Tooltip
                 UpdateAllFieldLabels();
 
                 // Re-check OBS connection with new settings
                 CheckObsWebSocketConnectionAsync();
 
-                MessageBox.Show("✅ SOZLAMALAR MUVAFFAQIYATLI SAQLANDI!\n\nMaydon raqami: " + safeFieldId + "-MAYDON\nOBS Port: " + safeObsPort, "AMATORA OBS", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show("✅ SOZLAMALAR MUVAFFAQIYATLI SAQLANDI!\n\nMaydon raqami: " + safeFieldId + "-MAYDON\nOBS Port: " + safeObsPort, "AMATORA OBS", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show("❌ Sozlamalarni saqlashda xatolik: " + ex.Message, "Xatolik", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show("❌ Sozlamalarni saqlashda xatolik: " + ex.Message, "Xatolik", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -181,7 +263,8 @@ namespace AmatoraObsWpf
         {
             if (txtHeaderFieldBadge != null) txtHeaderFieldBadge.Text = "MAYDON #" + safeFieldId;
             if (txtMainFieldTitle != null) txtMainFieldTitle.Text = "FIELD MONITOR (MAYDON #" + safeFieldId + ")";
-            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.3.0) — Maydon #" + safeFieldId + " faol!";
+            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.4.0) — Maydon #" + safeFieldId + " faol!";
+            if (trayIcon != null) trayIcon.Text = "AMATORA Engine (Maydon #" + safeFieldId + ")";
         }
 
         private void BuildUI()
@@ -203,8 +286,8 @@ namespace AmatoraObsWpf
         {
             Border headerBorder = new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(22, 22, 37)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(40, 40, 65)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(22, 22, 37)),
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 65)),
                 BorderThickness = new Thickness(0, 0, 0, 1)
             };
             Grid.SetRow(headerBorder, 0);
@@ -219,13 +302,13 @@ namespace AmatoraObsWpf
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             // Brand Logo & Field Badge
-            StackPanel logoPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            StackPanel logoPanel = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             TextBlock txtLogo = new TextBlock
             {
                 Text = "⚡ AMATORA",
                 FontSize = 22,
                 FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
                 VerticalAlignment = VerticalAlignment.Center
             };
             logoPanel.Children.Add(txtLogo);
@@ -235,8 +318,8 @@ namespace AmatoraObsWpf
                 Text = "MAYDON #" + safeFieldId,
                 FontSize = 12,
                 FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(255, 200, 0)),
-                Background = new SolidColorBrush(Color.FromArgb(40, 255, 200, 0)),
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 200, 0)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 255, 200, 0)),
                 Padding = new Thickness(8, 4, 8, 4),
                 Margin = new Thickness(12, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center
@@ -246,7 +329,7 @@ namespace AmatoraObsWpf
             headerGrid.Children.Add(logoPanel);
 
             // Nav Tabs
-            StackPanel navPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            StackPanel navPanel = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             btnTabObs = CreateNavButton("🎥 OBS AUTOMATION", true);
             btnTabTablo = CreateNavButton("📊 TABLO CONTROL", false);
             btnTabSettings = CreateNavButton("⚙️ SOZLAMALAR", false);
@@ -265,8 +348,8 @@ namespace AmatoraObsWpf
             // OBS Status Indicator Badge (Header Right)
             badgeObsStatus = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(40, 255, 68, 68)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(255, 68, 68)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 255, 68, 68)),
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 68, 68)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
                 Padding = new Thickness(10, 6, 10, 6),
@@ -278,25 +361,25 @@ namespace AmatoraObsWpf
                 Text = "🔴 OBS: ULANMAGAN",
                 FontSize = 12,
                 FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(255, 68, 68))
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 68, 68))
             };
             badgeObsStatus.Child = txtObsStatusBadgeText;
             Grid.SetColumn(badgeObsStatus, 2);
             headerGrid.Children.Add(badgeObsStatus);
         }
 
-        private Button CreateNavButton(string text, bool isActive)
+        private System.Windows.Controls.Button CreateNavButton(string text, bool isActive)
         {
-            Button btn = new Button
+            System.Windows.Controls.Button btn = new System.Windows.Controls.Button
             {
                 Content = text,
                 FontSize = 13,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(isActive ? Color.FromRgb(0, 242, 254) : Color.FromRgb(160, 160, 190)),
-                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(isActive ? System.Windows.Media.Color.FromRgb(0, 242, 254) : System.Windows.Media.Color.FromRgb(160, 160, 190)),
+                Background = System.Windows.Media.Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 Margin = new Thickness(10, 0, 10, 0),
-                Cursor = Cursors.Hand,
+                Cursor = System.Windows.Input.Cursors.Hand,
                 Padding = new Thickness(12, 8, 12, 8)
             };
             return btn;
@@ -339,13 +422,13 @@ namespace AmatoraObsWpf
                 Text = "FIELD MONITOR (MAYDON #" + safeFieldId + ")",
                 FontSize = 18,
                 FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White
+                Foreground = System.Windows.Media.Brushes.White
             };
             txtEngineStatusSub = new TextBlock
             {
-                Text = "AMATORA OBS Replay Engine (v2.3.0) — Maydon #" + safeFieldId + " faol!",
+                Text = "AMATORA OBS Replay Engine (v2.4.0) — Maydon #" + safeFieldId + " faol!",
                 FontSize = 13,
-                Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 170)),
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(140, 140, 170)),
                 Margin = new Thickness(0, 4, 0, 0)
             };
             headerStack.Children.Add(txtMainFieldTitle);
@@ -354,49 +437,49 @@ namespace AmatoraObsWpf
             topGrid.Children.Add(headerStack);
 
             // Action Buttons Panel (TEST REPLAY & CLEAN FOLDER & RECONNECT)
-            StackPanel btnPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 15) };
+            StackPanel btnPanel = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 15) };
 
-            btnCheckObsConnection = new Button
+            btnCheckObsConnection = new System.Windows.Controls.Button
             {
                 Content = "🔄 ULANISHNI TEKSHIRISH",
                 FontSize = 12,
                 FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
-                Background = new SolidColorBrush(Color.FromRgb(25, 35, 55)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(25, 35, 55)),
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(12, 8, 12, 8),
                 Margin = new Thickness(0, 0, 10, 0),
-                Cursor = Cursors.Hand
+                Cursor = System.Windows.Input.Cursors.Hand
             };
             btnCheckObsConnection.Click += (s, e) => CheckObsWebSocketConnectionAsync();
             btnPanel.Children.Add(btnCheckObsConnection);
 
-            btnCleanFolder = new Button
+            btnCleanFolder = new System.Windows.Controls.Button
             {
                 Content = "🧹 PAPKANI TOZALASH",
                 FontSize = 12,
                 FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(255, 68, 68)),
-                Background = new SolidColorBrush(Color.FromRgb(45, 25, 35)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(255, 68, 68)),
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 68, 68)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(45, 25, 35)),
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 68, 68)),
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(12, 8, 12, 8),
                 Margin = new Thickness(0, 0, 10, 0),
-                Cursor = Cursors.Hand
+                Cursor = System.Windows.Input.Cursors.Hand
             };
             btnCleanFolder.Click += (s, e) => CleanReplaysFolder();
             btnPanel.Children.Add(btnCleanFolder);
 
-            btnTestReplay = new Button
+            btnTestReplay = new System.Windows.Controls.Button
             {
                 Content = "🎬 TEST REPLAY BUFFER",
                 FontSize = 13,
                 FontWeight = FontWeights.Bold,
-                Foreground = Brushes.Black,
-                Background = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
+                Foreground = System.Windows.Media.Brushes.Black,
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
                 Padding = new Thickness(16, 9, 16, 9),
-                Cursor = Cursors.Hand
+                Cursor = System.Windows.Input.Cursors.Hand
             };
             btnTestReplay.Click += async (s, e) => await ExecuteFullGoalReplayWorkflowAsync("", "");
             btnPanel.Children.Add(btnTestReplay);
@@ -410,21 +493,21 @@ namespace AmatoraObsWpf
             // Activity Log Container
             Border feedBorder = new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(22, 22, 37)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(22, 22, 37)),
                 CornerRadius = new CornerRadius(12),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(40, 40, 65)),
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 65)),
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(15)
             };
             Grid.SetRow(feedBorder, 1);
             g.Children.Add(feedBorder);
 
-            scrollActivityFeed = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            scrollActivityFeed = new System.Windows.Controls.ScrollViewer { VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto };
             pnlActivityFeed = new StackPanel();
             scrollActivityFeed.Content = pnlActivityFeed;
             feedBorder.Child = scrollActivityFeed;
 
-            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.3.0) tushdi! Maydon #" + safeFieldId + " — O'yin yakunlanganda Replays papkasi avtomatik tozalanadi!", "#00F2FE");
+            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.4.0) tushdi! Maydon #" + safeFieldId + " — System Tray Logo & Desktop Brand Icon faol!", "#00F2FE");
 
             return b;
         }
@@ -432,10 +515,10 @@ namespace AmatoraObsWpf
         private Border BuildSettingsTabView()
         {
             Border b = new Border { Margin = new Thickness(20) };
-            ScrollViewer sv = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            System.Windows.Controls.ScrollViewer sv = new System.Windows.Controls.ScrollViewer { VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto };
             b.Child = sv;
 
-            StackPanel container = new StackPanel { MaxWidth = 650, HorizontalAlignment = HorizontalAlignment.Left };
+            StackPanel container = new StackPanel { MaxWidth = 650, HorizontalAlignment = System.Windows.HorizontalAlignment.Left };
             sv.Content = container;
 
             TextBlock title = new TextBlock
@@ -443,7 +526,7 @@ namespace AmatoraObsWpf
                 Text = "⚙️ OBS WEBSOCKET VA MAYDON SOZLAMALARI",
                 FontSize = 18,
                 FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White,
+                Foreground = System.Windows.Media.Brushes.White,
                 Margin = new Thickness(0, 0, 0, 20)
             };
             container.Children.Add(title);
@@ -474,23 +557,23 @@ namespace AmatoraObsWpf
                 Password = safeObsPassword,
                 FontSize = 14,
                 Padding = new Thickness(10, 8, 10, 8),
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 50)),
-                Foreground = Brushes.White,
-                BorderBrush = new SolidColorBrush(Color.FromRgb(50, 50, 80)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 30, 50)),
+                Foreground = System.Windows.Media.Brushes.White,
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(50, 50, 80)),
                 BorderThickness = new Thickness(1),
                 Margin = new Thickness(0, 0, 10, 15)
             };
             Grid.SetColumn(txtObsPassword, 0);
             pwdGrid.Children.Add(txtObsPassword);
 
-            txtObsPasswordVisible = new TextBox
+            txtObsPasswordVisible = new System.Windows.Controls.TextBox
             {
                 Text = safeObsPassword,
                 FontSize = 14,
                 Padding = new Thickness(10, 8, 10, 8),
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 50)),
-                Foreground = Brushes.White,
-                BorderBrush = new SolidColorBrush(Color.FromRgb(50, 50, 80)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 30, 50)),
+                Foreground = System.Windows.Media.Brushes.White,
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(50, 50, 80)),
                 BorderThickness = new Thickness(1),
                 Margin = new Thickness(0, 0, 10, 15),
                 Visibility = Visibility.Collapsed
@@ -498,7 +581,7 @@ namespace AmatoraObsWpf
             Grid.SetColumn(txtObsPasswordVisible, 0);
             pwdGrid.Children.Add(txtObsPasswordVisible);
 
-            btnTogglePassword = new Button
+            btnTogglePassword = new System.Windows.Controls.Button
             {
                 Content = "👁️ KO'Z",
                 FontSize = 13,
@@ -506,11 +589,11 @@ namespace AmatoraObsWpf
                 Padding = new Thickness(12, 6, 12, 6),
                 Height = 38,
                 Margin = new Thickness(0, 0, 0, 15),
-                Background = new SolidColorBrush(Color.FromRgb(40, 40, 70)),
-                Foreground = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 70)),
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
                 BorderThickness = new Thickness(1),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
-                Cursor = Cursors.Hand
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
+                Cursor = System.Windows.Input.Cursors.Hand
             };
             btnTogglePassword.Click += TogglePasswordVisibility;
             Grid.SetColumn(btnTogglePassword, 1);
@@ -529,16 +612,16 @@ namespace AmatoraObsWpf
             container.Children.Add(txtFolder);
 
             // Save Button
-            btnSaveConfig = new Button
+            btnSaveConfig = new System.Windows.Controls.Button
             {
                 Content = "💾 BARCHA SOZLAMALARNI SAQLASH",
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
-                Foreground = Brushes.Black,
-                Background = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
+                Foreground = System.Windows.Media.Brushes.Black,
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254)),
                 Padding = new Thickness(20, 12, 20, 12),
                 Margin = new Thickness(0, 20, 0, 0),
-                Cursor = Cursors.Hand
+                Cursor = System.Windows.Input.Cursors.Hand
             };
             btnSaveConfig.Click += (s, e) => SaveUserConfigValues();
             container.Children.Add(btnSaveConfig);
@@ -573,21 +656,21 @@ namespace AmatoraObsWpf
                 Text = text,
                 FontSize = 13,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromRgb(180, 180, 210)),
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 180, 210)),
                 Margin = new Thickness(0, 0, 0, 6)
             };
         }
 
-        private TextBox CreateFormInput(string defaultText)
+        private System.Windows.Controls.TextBox CreateFormInput(string defaultText)
         {
-            return new TextBox
+            return new System.Windows.Controls.TextBox
             {
                 Text = defaultText,
                 FontSize = 14,
                 Padding = new Thickness(10, 8, 10, 8),
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 50)),
-                Foreground = Brushes.White,
-                BorderBrush = new SolidColorBrush(Color.FromRgb(50, 50, 80)),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 30, 50)),
+                Foreground = System.Windows.Media.Brushes.White,
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(50, 50, 80)),
                 BorderThickness = new Thickness(1),
                 Margin = new Thickness(0, 0, 0, 15)
             };
@@ -601,7 +684,7 @@ namespace AmatoraObsWpf
                 Text = "📊 STADION TABLOSI (HDMI Offline Boshqaruv)",
                 FontSize = 18,
                 FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White
+                Foreground = System.Windows.Media.Brushes.White
             };
             b.Child = tb;
             return b;
@@ -613,9 +696,9 @@ namespace AmatoraObsWpf
             viewStadiumTablo.Visibility = tabIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
             viewAppSettings.Visibility = tabIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
 
-            btnTabObs.Foreground = new SolidColorBrush(tabIndex == 0 ? Color.FromRgb(0, 242, 254) : Color.FromRgb(160, 160, 190));
-            btnTabTablo.Foreground = new SolidColorBrush(tabIndex == 1 ? Color.FromRgb(0, 242, 254) : Color.FromRgb(160, 160, 190));
-            btnTabSettings.Foreground = new SolidColorBrush(tabIndex == 2 ? Color.FromRgb(0, 242, 254) : Color.FromRgb(160, 160, 190));
+            btnTabObs.Foreground = new SolidColorBrush(tabIndex == 0 ? System.Windows.Media.Color.FromRgb(0, 242, 254) : System.Windows.Media.Color.FromRgb(160, 160, 190));
+            btnTabTablo.Foreground = new SolidColorBrush(tabIndex == 1 ? System.Windows.Media.Color.FromRgb(0, 242, 254) : System.Windows.Media.Color.FromRgb(160, 160, 190));
+            btnTabSettings.Foreground = new SolidColorBrush(tabIndex == 2 ? System.Windows.Media.Color.FromRgb(0, 242, 254) : System.Windows.Media.Color.FromRgb(160, 160, 190));
         }
 
         private void AddActivityFeedCard(string tag, string message, string hexColor)
@@ -624,26 +707,26 @@ namespace AmatoraObsWpf
             {
                 Border card = new Border
                 {
-                    Background = new SolidColorBrush(Color.FromRgb(28, 28, 45)),
+                    Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(28, 28, 45)),
                     CornerRadius = new CornerRadius(8),
                     Margin = new Thickness(0, 0, 0, 10),
                     Padding = new Thickness(12)
                 };
 
-                StackPanel sp = new StackPanel { Orientation = Orientation.Horizontal };
+                StackPanel sp = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
                 TextBlock txtTag = new TextBlock
                 {
                     Text = tag,
                     FontWeight = FontWeights.Bold,
                     FontSize = 12,
-                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hexColor)),
+                    Foreground = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hexColor)),
                     Margin = new Thickness(0, 0, 12, 0)
                 };
                 TextBlock txtMsg = new TextBlock
                 {
                     Text = message,
                     FontSize = 13,
-                    Foreground = Brushes.White,
+                    Foreground = System.Windows.Media.Brushes.White,
                     TextWrapping = TextWrapping.Wrap
                 };
                 sp.Children.Add(txtTag);
@@ -690,17 +773,17 @@ namespace AmatoraObsWpf
             {
                 if (connected)
                 {
-                    badgeObsStatus.Background = new SolidColorBrush(Color.FromArgb(40, 0, 242, 254));
-                    badgeObsStatus.BorderBrush = new SolidColorBrush(Color.FromRgb(0, 242, 254));
+                    badgeObsStatus.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 0, 242, 254));
+                    badgeObsStatus.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254));
                     txtObsStatusBadgeText.Text = "🟢 OBS: ULANDI (" + safeObsPort + ")";
-                    txtObsStatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0, 242, 254));
+                    txtObsStatusBadgeText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 242, 254));
                 }
                 else
                 {
-                    badgeObsStatus.Background = new SolidColorBrush(Color.FromArgb(40, 255, 68, 68));
-                    badgeObsStatus.BorderBrush = new SolidColorBrush(Color.FromRgb(255, 68, 68));
+                    badgeObsStatus.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 255, 68, 68));
+                    badgeObsStatus.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 68, 68));
                     txtObsStatusBadgeText.Text = "🔴 OBS: ULANMAGAN";
-                    txtObsStatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(255, 68, 68));
+                    txtObsStatusBadgeText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 68, 68));
                 }
             });
         }
