@@ -117,7 +117,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v3.1.0 Anti-Loop)";
+            Title = "AMATORA OBS Replay Engine (v3.2.0 Universal)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -509,14 +509,35 @@ namespace AmatoraObsWpf
         {
             try
             {
-                // Lock current timestamps at launch to prevent old signals from triggering
-                lastProcessedGoalTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                lastProcessedFinishTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                // Lock current latest timestamps from DB at launch
+                string goalSignalName = "REMOTE_GOAL_FIELD_" + safeFieldId;
+                string goalUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + goalSignalName + "&select=id,logo_url";
+                HttpResponseMessage resGoal = await httpClient.GetAsync(goalUrl);
+                if (resGoal.IsSuccessStatusCode)
+                {
+                    string body = await resGoal.Content.ReadAsStringAsync();
+                    long ts = ExtractJsonLongField(body, "timestamp");
+                    if (ts > 0)
+                    {
+                        lastProcessedGoalTimestamp = ts;
+                    }
+                    else
+                    {
+                        lastProcessedGoalTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    }
+                }
+                else
+                {
+                    lastProcessedGoalTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                }
 
                 // Ensure OBS is explicitly set to MainScene on launch
                 await EnsureObsMainSceneOnLaunchAsync();
             }
-            catch { }
+            catch
+            {
+                lastProcessedGoalTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            }
         }
 
         private async Task EnsureObsMainSceneOnLaunchAsync()
@@ -1482,33 +1503,40 @@ namespace AmatoraObsWpf
 
         private string ExtractJsonField(string json, string fieldName)
         {
+            if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(fieldName)) return "";
             try
             {
-                string searchPattern = "\"" + fieldName + "\":\"";
-                int idx = json.IndexOf(searchPattern);
-                if (idx != -1)
+                int keyIdx = json.IndexOf("\"" + fieldName + "\"");
+                if (keyIdx == -1) return "";
+
+                int colonIdx = json.IndexOf(":", keyIdx);
+                if (colonIdx == -1) return "";
+
+                int start = colonIdx + 1;
+                while (start < json.Length && (json[start] == ' ' || json[start] == '\t' || json[start] == '\r' || json[start] == '\n'))
                 {
-                    int start = idx + searchPattern.Length;
+                    start++;
+                }
+
+                if (start >= json.Length) return "";
+
+                if (json[start] == '"')
+                {
+                    start++;
                     int end = json.IndexOf("\"", start);
                     if (end != -1)
                     {
                         return json.Substring(start, end - start);
                     }
                 }
-
-                // Try integer / unquoted format e.g. "organization_id": 2
-                string searchNumPattern = "\"" + fieldName + "\":";
-                int idxNum = json.IndexOf(searchNumPattern);
-                if (idxNum != -1)
+                else
                 {
-                    int start = idxNum + searchNumPattern.Length;
-                    StringBuilder sb = new StringBuilder();
-                    while (start < json.Length && (char.IsDigit(json[start]) || json[start] == ' ' || json[start] == '-'))
+                    int end = start;
+                    while (end < json.Length && json[end] != ',' && json[end] != '}' && json[end] != ']' && json[end] != ' ' && json[end] != '\r' && json[end] != '\n')
                     {
-                        if (char.IsDigit(json[start])) sb.Append(json[start]);
-                        start++;
+                        end++;
                     }
-                    if (sb.Length > 0) return sb.ToString();
+                    return json.Substring(start, end - start).Trim();
                 }
             }
             catch { }
@@ -1570,7 +1598,7 @@ namespace AmatoraObsWpf
                 if (goalRes.IsSuccessStatusCode)
                 {
                     string body = await goalRes.Content.ReadAsStringAsync();
-                    if (!string.IsNullOrWhiteSpace(body) && body.Contains("logo_url") && body.Contains("timestamp"))
+                    if (!string.IsNullOrWhiteSpace(body) && body.Contains("timestamp"))
                     {
                         long timestamp = ExtractJsonLongField(body, "timestamp");
                         string eventId = ExtractJsonField(body, "event_id");
@@ -1613,7 +1641,7 @@ namespace AmatoraObsWpf
                 if (finishRes.IsSuccessStatusCode)
                 {
                     string body = await finishRes.Content.ReadAsStringAsync();
-                    if (!string.IsNullOrWhiteSpace(body) && body.Contains("logo_url") && body.Contains("timestamp"))
+                    if (!string.IsNullOrWhiteSpace(body) && body.Contains("timestamp"))
                     {
                         long timestamp = ExtractJsonLongField(body, "timestamp");
                         string signalOrgId = ExtractJsonField(body, "org_id");
