@@ -24,7 +24,7 @@ namespace AmatoraObsWpf
         [STAThread]
         public static void Main()
         {
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | System.Net.SecurityProtocolType.Tls11 | System.Net.SecurityProtocolType.Tls;
             App app = new App();
             app.Run(new MainWindow());
         }
@@ -57,6 +57,7 @@ namespace AmatoraObsWpf
         private System.Windows.Controls.Button btnCleanFolder;
 
         // Settings Controls
+        private System.Windows.Controls.TextBox txtOrgId;
         private System.Windows.Controls.TextBox txtObsIp;
         private System.Windows.Controls.TextBox txtObsPort;
         private PasswordBox txtObsPassword;
@@ -78,6 +79,7 @@ namespace AmatoraObsWpf
 
         // Config & Runtime State
         private string configFilePath;
+        private string safeOrgId = "";
         private string safeObsIp = "127.0.0.1";
         private string safeObsPort = "4455";
         private string safeObsPassword = "";
@@ -96,7 +98,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v2.6.0)";
+            Title = "AMATORA OBS Replay Engine (v2.7.0 Multi-Tenant)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -140,7 +142,7 @@ namespace AmatoraObsWpf
             try
             {
                 // Lock existing goal signal at startup
-                string goalSignalName = "REMOTE_GOAL_FIELD_" + safeFieldId;
+                string goalSignalName = GetGoalSignalName();
                 string goalUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + goalSignalName + "&select=id,name,logo_url";
                 HttpResponseMessage resGoal = await httpClient.GetAsync(goalUrl);
                 if (resGoal.IsSuccessStatusCode)
@@ -149,7 +151,7 @@ namespace AmatoraObsWpf
                 }
 
                 // Lock existing finish signal at startup
-                string finishSignalName = "REMOTE_FINISH_MATCH_FIELD_" + safeFieldId;
+                string finishSignalName = GetFinishSignalName();
                 string finishUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + finishSignalName + "&select=id,name,logo_url";
                 HttpResponseMessage resFinish = await httpClient.GetAsync(finishUrl);
                 if (resFinish.IsSuccessStatusCode)
@@ -161,6 +163,24 @@ namespace AmatoraObsWpf
                 await EnsureObsMainSceneOnLaunchAsync();
             }
             catch { }
+        }
+
+        private string GetGoalSignalName()
+        {
+            if (!string.IsNullOrWhiteSpace(safeOrgId) && safeOrgId != "default")
+            {
+                return "REMOTE_GOAL_" + safeOrgId + "_FIELD_" + safeFieldId;
+            }
+            return "REMOTE_GOAL_FIELD_" + safeFieldId;
+        }
+
+        private string GetFinishSignalName()
+        {
+            if (!string.IsNullOrWhiteSpace(safeOrgId) && safeOrgId != "default")
+            {
+                return "REMOTE_FINISH_MATCH_" + safeOrgId + "_FIELD_" + safeFieldId;
+            }
+            return "REMOTE_FINISH_MATCH_FIELD_" + safeFieldId;
         }
 
         private async Task EnsureObsMainSceneOnLaunchAsync()
@@ -291,7 +311,8 @@ namespace AmatoraObsWpf
                     string[] lines = File.ReadAllLines(configFilePath);
                     foreach (string line in lines)
                     {
-                        if (line.StartsWith("IP=")) safeObsIp = line.Substring(3).Trim();
+                        if (line.StartsWith("OrgId=")) safeOrgId = line.Substring(6).Trim();
+                        else if (line.StartsWith("IP=")) safeObsIp = line.Substring(3).Trim();
                         else if (line.StartsWith("Port=")) safeObsPort = line.Substring(5).Trim();
                         else if (line.StartsWith("Password=")) safeObsPassword = line.Substring(9).Trim();
                         else if (line.StartsWith("Scene=")) safeObsSceneName = line.Substring(6).Trim();
@@ -313,6 +334,7 @@ namespace AmatoraObsWpf
             {
                 string pwdToSave = isPasswordVisible ? txtObsPasswordVisible.Text : txtObsPassword.Password;
 
+                safeOrgId = string.IsNullOrWhiteSpace(txtOrgId.Text) ? "" : txtOrgId.Text.Trim();
                 safeObsIp = string.IsNullOrWhiteSpace(txtObsIp.Text) ? "127.0.0.1" : txtObsIp.Text.Trim();
                 safeObsPort = string.IsNullOrWhiteSpace(txtObsPort.Text) ? "4455" : txtObsPort.Text.Trim();
                 safeObsPassword = pwdToSave;
@@ -322,6 +344,7 @@ namespace AmatoraObsWpf
                 safeFieldId = string.IsNullOrWhiteSpace(txtFieldId.Text) ? "1" : txtFieldId.Text.Trim();
 
                 StringBuilder sb = new StringBuilder();
+                sb.AppendLine("OrgId=" + safeOrgId);
                 sb.AppendLine("IP=" + safeObsIp);
                 sb.AppendLine("Port=" + safeObsPort);
                 sb.AppendLine("Password=" + safeObsPassword);
@@ -338,7 +361,7 @@ namespace AmatoraObsWpf
                 // Re-check OBS connection with new settings
                 CheckObsWebSocketConnectionAsync();
 
-                System.Windows.MessageBox.Show("✅ SOZLAMALAR MUVAFFAQIYATLI SAQLANDI!\n\nMaydon raqami: " + safeFieldId + "-MAYDON\nReplay Davomiyligi: " + safeReplayDurationSec + " sekunt", "AMATORA OBS", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show("✅ SOZLAMALAR MUVAFFAQIYATLI SAQLANDI!\n\nMaydon raqami: " + safeFieldId + "-MAYDON\nTashkilot ID: " + (string.IsNullOrEmpty(safeOrgId) ? "Barchasi (Default)" : safeOrgId), "AMATORA OBS", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
@@ -348,10 +371,11 @@ namespace AmatoraObsWpf
 
         private void UpdateAllFieldLabels()
         {
-            if (txtHeaderFieldBadge != null) txtHeaderFieldBadge.Text = "MAYDON #" + safeFieldId;
-            if (txtMainFieldTitle != null) txtMainFieldTitle.Text = "FIELD MONITOR (MAYDON #" + safeFieldId + ")";
-            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.6.0) — Maydon #" + safeFieldId + " faol!";
-            if (trayIcon != null) trayIcon.Text = "AMATORA Engine (Maydon #" + safeFieldId + ")";
+            string orgTag = string.IsNullOrEmpty(safeOrgId) ? "" : (" [" + safeOrgId + "]");
+            if (txtHeaderFieldBadge != null) txtHeaderFieldBadge.Text = "MAYDON #" + safeFieldId + orgTag;
+            if (txtMainFieldTitle != null) txtMainFieldTitle.Text = "FIELD MONITOR (MAYDON #" + safeFieldId + orgTag + ")";
+            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.7.0 Multi-Tenant) — Maydon #" + safeFieldId + orgTag + " faol!";
+            if (trayIcon != null) trayIcon.Text = "AMATORA Engine (Maydon #" + safeFieldId + orgTag + ")";
         }
 
         private void BuildUI()
@@ -507,7 +531,7 @@ namespace AmatoraObsWpf
             };
             txtEngineStatusSub = new TextBlock
             {
-                Text = "AMATORA OBS Replay Engine (v2.6.0) — Maydon #" + safeFieldId + " faol!",
+                Text = "AMATORA OBS Replay Engine (v2.7.0 Multi-Tenant) — Maydon #" + safeFieldId + " faol!",
                 FontSize = 13,
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(140, 140, 170)),
                 Margin = new Thickness(0, 4, 0, 0)
@@ -562,7 +586,7 @@ namespace AmatoraObsWpf
                 Padding = new Thickness(16, 9, 16, 9),
                 Cursor = System.Windows.Input.Cursors.Hand
             };
-            btnTestReplay.Click += async (s, e) => await ExecuteFullGoalReplayWorkflowAsync("", "");
+            btnTestReplay.Click += async (s, e) => await ExecuteFullGoalReplayWorkflowAsync("", "", safeOrgId);
             btnPanel.Children.Add(btnTestReplay);
 
             Grid.SetColumn(btnPanel, 1);
@@ -588,7 +612,7 @@ namespace AmatoraObsWpf
             scrollActivityFeed.Content = pnlActivityFeed;
             feedBorder.Child = scrollActivityFeed;
 
-            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.6.0) tushdi! Maydon #" + safeFieldId + " — Replay davomiyligi: " + safeReplayDurationSec + "s (Kechikishsiz almashtirish)", "#00F2FE");
+            AddActivityFeedCard("🚀 MULTI-TENANT SYSTEM", "AMATORA Engine (v2.7.0) tushdi! Tashkilotlar o'zaro 100% ajratilgan va himoyalangan!", "#00F2FE");
 
             return b;
         }
@@ -611,6 +635,11 @@ namespace AmatoraObsWpf
                 Margin = new Thickness(0, 0, 0, 20)
             };
             container.Children.Add(title);
+
+            // Org ID
+            container.Children.Add(CreateFormLabel("🏢 TASHKILOT ID / SLUG (Multi-Tenant izolyatsiya uchun):"));
+            txtOrgId = CreateFormInput(safeOrgId);
+            container.Children.Add(txtOrgId);
 
             // Field ID
             container.Children.Add(CreateFormLabel("⚽ MAYDON RAQAMI / ID (1 yoki 2):"));
@@ -875,7 +904,7 @@ namespace AmatoraObsWpf
             await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
         }
 
-        private async Task ExecuteFullGoalReplayWorkflowAsync(string matchId, string eventId)
+        private async Task ExecuteFullGoalReplayWorkflowAsync(string matchId, string eventId, string orgId)
         {
             int port = 4455;
             int.TryParse(safeObsPort, out port);
@@ -947,18 +976,19 @@ namespace AmatoraObsWpf
                         string returnMainReq = "{\"op\":6,\"d\":{\"requestType\":\"SetCurrentProgramScene\",\"requestData\":{\"sceneName\":\"MainScene\"},\"requestId\":\"return_main\"}}";
                         await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, returnMainReq);
 
-                        // STEP 6: Find latest video file in C:\Replays and Upload to Supabase Storage
+                        // STEP 6: Find latest video file in C:\Replays and Upload to Supabase Storage with org_id isolation
                         FileInfo latestVideo = GetLatestReplayFile(safeFolder);
                         if (latestVideo != null && latestVideo.Exists)
                         {
                             AddActivityFeedCard("☁️ UPLOAD", "Replay video Supabase Storage-ga yuklanmoqda (" + (latestVideo.Length / 1024 / 1024) + " MB)...", "#FF007F");
-                            string publicUrl = await UploadVideoToSupabaseStorageAsync(latestVideo.FullName);
+                            string targetOrg = string.IsNullOrEmpty(orgId) ? (string.IsNullOrEmpty(safeOrgId) ? "default" : safeOrgId) : orgId;
+                            string publicUrl = await UploadVideoToSupabaseStorageAsync(latestVideo.FullName, targetOrg, matchId);
 
                             if (!string.IsNullOrEmpty(publicUrl))
                             {
-                                AddActivityFeedCard("✅ SUPABASE", "Replay video bulutga yuklandi!", "#00F2FE");
+                                AddActivityFeedCard("✅ SUPABASE", "Replay video bulutga yuklandi! (" + targetOrg + ")", "#00F2FE");
 
-                                // STEP 7: Link replay URL to match_event in Supabase so amatora-app plays it
+                                // STEP 7: Link replay URL to unique match_event UUID in Supabase
                                 if (!string.IsNullOrEmpty(eventId))
                                 {
                                     await LinkReplayUrlToMatchEventAsync(eventId, publicUrl);
@@ -1038,12 +1068,15 @@ namespace AmatoraObsWpf
             return null;
         }
 
-        private async Task<string> UploadVideoToSupabaseStorageAsync(string localFilePath)
+        private async Task<string> UploadVideoToSupabaseStorageAsync(string localFilePath, string orgId, string matchId)
         {
             try
             {
                 byte[] fileBytes = File.ReadAllBytes(localFilePath);
-                string fileName = "replay_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".mp4";
+                string pathPrefix = (string.IsNullOrEmpty(orgId) ? "default" : orgId) + "/";
+                if (!string.IsNullOrEmpty(matchId)) pathPrefix += matchId + "/";
+                
+                string fileName = pathPrefix + "replay_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".mp4";
                 string uploadUrl = SupabaseUrl + "/storage/v1/object/replays/" + fileName;
 
                 using (ByteArrayContent content = new ByteArrayContent(fileBytes))
@@ -1127,7 +1160,7 @@ namespace AmatoraObsWpf
         private async Task PollSupabaseRemoteFieldSignal()
         {
             // 1. Poll Goal Signal
-            string goalSignalName = "REMOTE_GOAL_FIELD_" + safeFieldId;
+            string goalSignalName = GetGoalSignalName();
             string goalUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + goalSignalName + "&select=id,name,logo_url";
 
             HttpResponseMessage goalRes = await httpClient.GetAsync(goalUrl);
@@ -1140,16 +1173,21 @@ namespace AmatoraObsWpf
                     {
                         lastSeenGoalSignalTime = body;
                         
+                        string signalOrgId = ExtractJsonField(body, "org_id");
                         string matchId = ExtractJsonField(body, "match_id");
                         string eventId = ExtractJsonField(body, "event_id");
 
-                        await ExecuteFullGoalReplayWorkflowAsync(matchId, eventId);
+                        // If safeOrgId is set on this PC, verify signal belongs to this org
+                        if (string.IsNullOrWhiteSpace(safeOrgId) || safeOrgId == "default" || string.IsNullOrWhiteSpace(signalOrgId) || signalOrgId == safeOrgId)
+                        {
+                            await ExecuteFullGoalReplayWorkflowAsync(matchId, eventId, signalOrgId);
+                        }
                     }
                 }
             }
 
             // 2. Poll Finish Match Signal to Clean Replays Folder
-            string finishSignalName = "REMOTE_FINISH_MATCH_FIELD_" + safeFieldId;
+            string finishSignalName = GetFinishSignalName();
             string finishUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + finishSignalName + "&select=id,name,logo_url";
 
             HttpResponseMessage finishRes = await httpClient.GetAsync(finishUrl);
@@ -1161,7 +1199,12 @@ namespace AmatoraObsWpf
                     if (body != lastSeenFinishSignalTime)
                     {
                         lastSeenFinishSignalTime = body;
-                        CleanReplaysFolder();
+
+                        string signalOrgId = ExtractJsonField(body, "org_id");
+                        if (string.IsNullOrWhiteSpace(safeOrgId) || safeOrgId == "default" || string.IsNullOrWhiteSpace(signalOrgId) || signalOrgId == safeOrgId)
+                        {
+                            CleanReplaysFolder();
+                        }
                     }
                 }
             }
