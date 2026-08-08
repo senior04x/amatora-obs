@@ -3,8 +3,9 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -26,15 +27,15 @@ namespace AmatoraObsWpf
 
     public class MainWindow : Window
     {
-        // UI Container Fields
+        // UI Containers
         private Grid mainGrid;
         private Grid mainAppView;
-        
+
         // Navigation Buttons
         private Button btnTabObs;
         private Button btnTabTablo;
         private Button btnTabSettings;
-        
+
         // Views
         private Border viewObsAutomation;
         private Border viewStadiumTablo;
@@ -42,10 +43,14 @@ namespace AmatoraObsWpf
 
         // Header Controls
         private TextBlock txtHeaderFieldBadge;
+        private Border badgeObsStatus;
+        private TextBlock txtObsStatusBadgeText;
 
-        // Status Cards Controls
+        // Status Panel Controls
         private TextBlock txtMainFieldTitle;
         private TextBlock txtEngineStatusSub;
+        private Button btnTestReplay;
+        private Button btnCheckObsConnection;
 
         // Settings Controls
         private TextBox txtObsIp;
@@ -59,7 +64,7 @@ namespace AmatoraObsWpf
         private TextBox txtFieldId;
         private Button btnSaveConfig;
 
-        // Activity Log Container
+        // Activity Feed
         private StackPanel pnlActivityFeed;
         private ScrollViewer scrollActivityFeed;
 
@@ -73,6 +78,8 @@ namespace AmatoraObsWpf
         private string safeFieldId = "1";
 
         private bool isServiceRunning = true;
+        private bool isObsConnected = false;
+        private ClientWebSocket obsClientWebSocket;
         private string lastSeenSignalTime = "";
         private HttpClient httpClient;
 
@@ -83,7 +90,7 @@ namespace AmatoraObsWpf
         {
             Title = "AMATORA OBS Replay Engine (v2.0.0)";
             Width = 1100;
-            Height = 720;
+            Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = new SolidColorBrush(Color.FromRgb(15, 15, 26));
 
@@ -102,6 +109,9 @@ namespace AmatoraObsWpf
 
             LoadSavedConfig();
             BuildUI();
+            
+            // Check OBS Connection & Start Polling
+            CheckObsWebSocketConnectionAsync();
             StartRemotePollingLoop();
         }
 
@@ -151,8 +161,11 @@ namespace AmatoraObsWpf
 
                 File.WriteAllText(configFilePath, sb.ToString());
 
-                // Update UI Labels across the entire app
+                // Update UI Labels
                 UpdateAllFieldLabels();
+
+                // Re-check OBS connection with new settings
+                CheckObsWebSocketConnectionAsync();
 
                 MessageBox.Show("✅ SOZLAMALAR MUVAFFAQIYATLI SAQLANDI!\n\nMaydon raqami: " + safeFieldId + "-MAYDON\nOBS Port: " + safeObsPort, "AMATORA OBS", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -174,10 +187,9 @@ namespace AmatoraObsWpf
             mainGrid = new Grid();
             Content = mainGrid;
 
-            // Main Layout Container
             mainAppView = new Grid();
-            mainAppView.RowDefinitions.Add(new RowDefinition { Height = new GridLength(65) }); // Header
-            mainAppView.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // Content
+            mainAppView.RowDefinitions.Add(new RowDefinition { Height = new GridLength(65) });
+            mainAppView.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             mainGrid.Children.Add(mainAppView);
 
             BuildHeaderView();
@@ -204,7 +216,7 @@ namespace AmatoraObsWpf
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // Brand Logo
+            // Brand Logo & Field Badge
             StackPanel logoPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             TextBlock txtLogo = new TextBlock
             {
@@ -247,6 +259,28 @@ namespace AmatoraObsWpf
 
             Grid.SetColumn(navPanel, 1);
             headerGrid.Children.Add(navPanel);
+
+            // OBS Status Indicator Badge (Header Right)
+            badgeObsStatus = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(40, 255, 68, 68)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(255, 68, 68)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 6, 10, 6),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            txtObsStatusBadgeText = new TextBlock
+            {
+                Text = "🔴 OBS: ULANMAGAN",
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(255, 68, 68))
+            };
+            badgeObsStatus.Child = txtObsStatusBadgeText;
+            Grid.SetColumn(badgeObsStatus, 2);
+            headerGrid.Children.Add(badgeObsStatus);
         }
 
         private Button CreateNavButton(string text, bool isActive)
@@ -292,7 +326,11 @@ namespace AmatoraObsWpf
             g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             b.Child = g;
 
-            // Header Info
+            // Top Info & Test Action Controls
+            Grid topGrid = new Grid();
+            topGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            topGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
             StackPanel headerStack = new StackPanel { Margin = new Thickness(0, 0, 0, 15) };
             txtMainFieldTitle = new TextBlock
             {
@@ -310,10 +348,48 @@ namespace AmatoraObsWpf
             };
             headerStack.Children.Add(txtMainFieldTitle);
             headerStack.Children.Add(txtEngineStatusSub);
-            Grid.SetRow(headerStack, 0);
-            g.Children.Add(headerStack);
+            Grid.SetColumn(headerStack, 0);
+            topGrid.Children.Add(headerStack);
 
-            // Activity Feed Box
+            // Action Buttons Panel (TEST REPLAY & RECONNECT)
+            StackPanel btnPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 15) };
+
+            btnCheckObsConnection = new Button
+            {
+                Content = "🔄 ULANISHNI TEKSHIRISH",
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
+                Background = new SolidColorBrush(Color.FromRgb(25, 35, 55)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(14, 8, 14, 8),
+                Margin = new Thickness(0, 0, 10, 0),
+                Cursor = Cursors.Hand
+            };
+            btnCheckObsConnection.Click += (s, e) => CheckObsWebSocketConnectionAsync();
+            btnPanel.Children.Add(btnCheckObsConnection);
+
+            btnTestReplay = new Button
+            {
+                Content = "🎬 TEST REPLAY BUFFER",
+                FontSize = 13,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.Black,
+                Background = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
+                Padding = new Thickness(16, 9, 16, 9),
+                Cursor = Cursors.Hand
+            };
+            btnTestReplay.Click += async (s, e) => await TriggerObsReplayBufferAsync(true);
+            btnPanel.Children.Add(btnTestReplay);
+
+            Grid.SetColumn(btnPanel, 1);
+            topGrid.Children.Add(btnPanel);
+
+            Grid.SetRow(topGrid, 0);
+            g.Children.Add(topGrid);
+
+            // Activity Log Container
             Border feedBorder = new Border
             {
                 Background = new SolidColorBrush(Color.FromRgb(22, 22, 37)),
@@ -330,7 +406,7 @@ namespace AmatoraObsWpf
             scrollActivityFeed.Content = pnlActivityFeed;
             feedBorder.Child = scrollActivityFeed;
 
-            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine tushdi! Maydon #" + safeFieldId + " uchun onlayn signallar kutilmoqda...", "#00F2FE");
+            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.0.0) tushdi! Maydon #" + safeFieldId + " uchun tayyor...", "#00F2FE");
 
             return b;
         }
@@ -360,7 +436,7 @@ namespace AmatoraObsWpf
             container.Children.Add(txtFieldId);
 
             // OBS IP
-            container.Children.Add(CreateFormLabel("🌐 OBS Server IP (Masalan: 127.0.0.1):"));
+            container.Children.Add(CreateFormLabel("🌐 OBS Server IP (Default: 127.0.0.1):"));
             txtObsIp = CreateFormInput(safeObsIp);
             container.Children.Add(txtObsIp);
 
@@ -369,7 +445,7 @@ namespace AmatoraObsWpf
             txtObsPort = CreateFormInput(safeObsPort);
             container.Children.Add(txtObsPort);
 
-            // OBS Password with EYE TOGGLE BUTTON 👁️
+            // OBS Password with Eye Toggle Button
             container.Children.Add(CreateFormLabel("🔑 OBS WebSocket Paroli:"));
             Grid pwdGrid = new Grid();
             pwdGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -456,7 +532,6 @@ namespace AmatoraObsWpf
         {
             if (isPasswordVisible)
             {
-                // Switch to hidden password
                 txtObsPassword.Password = txtObsPasswordVisible.Text;
                 txtObsPassword.Visibility = Visibility.Visible;
                 txtObsPasswordVisible.Visibility = Visibility.Collapsed;
@@ -465,7 +540,6 @@ namespace AmatoraObsWpf
             }
             else
             {
-                // Switch to visible text
                 txtObsPasswordVisible.Text = txtObsPassword.Password;
                 txtObsPasswordVisible.Visibility = Visibility.Visible;
                 txtObsPassword.Visibility = Visibility.Collapsed;
@@ -562,6 +636,108 @@ namespace AmatoraObsWpf
             });
         }
 
+        private async void CheckObsWebSocketConnectionAsync()
+        {
+            bool connected = await ConnectToObsWebSocketAsync();
+            UpdateObsStatusUI(connected);
+        }
+
+        private async Task<bool> ConnectToObsWebSocketAsync()
+        {
+            try
+            {
+                if (obsClientWebSocket != null)
+                {
+                    try { obsClientWebSocket.Dispose(); } catch { }
+                }
+
+                obsClientWebSocket = new ClientWebSocket();
+                int port = 4455;
+                int.TryParse(safeObsPort, out port);
+
+                string wsUriStr = "ws://" + safeObsIp + ":" + port;
+                Uri wsUri = new Uri(wsUriStr);
+
+                CancellationTokenSource cts = new CancellationTokenSource(3000);
+                await obsClientWebSocket.ConnectAsync(wsUri, cts.Token);
+
+                if (obsClientWebSocket.State == WebSocketState.Open)
+                {
+                    // Send obs-websocket Hello/Identify RPC
+                    string identifyMsg = "{\"op\":1,\"d\":{\"rpcVersion\":1}}";
+                    byte[] sendBytes = Encoding.UTF8.GetBytes(identifyMsg);
+                    await obsClientWebSocket.SendAsync(new ArraySegment<byte>(sendBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+
+                    isObsConnected = true;
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("OBS Connection exception: " + ex.Message);
+            }
+
+            isObsConnected = false;
+            return false;
+        }
+
+        private void UpdateObsStatusUI(bool connected)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (connected)
+                {
+                    badgeObsStatus.Background = new SolidColorBrush(Color.FromArgb(40, 0, 242, 254));
+                    badgeObsStatus.BorderBrush = new SolidColorBrush(Color.FromRgb(0, 242, 254));
+                    txtObsStatusBadgeText.Text = "🟢 OBS: ULANDI (" + safeObsPort + ")";
+                    txtObsStatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0, 242, 254));
+                }
+                else
+                {
+                    badgeObsStatus.Background = new SolidColorBrush(Color.FromArgb(40, 255, 68, 68));
+                    badgeObsStatus.BorderBrush = new SolidColorBrush(Color.FromRgb(255, 68, 68));
+                    txtObsStatusBadgeText.Text = "🔴 OBS: ULANMAGAN";
+                    txtObsStatusBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(255, 68, 68));
+                }
+            });
+        }
+
+        private async Task TriggerObsReplayBufferAsync(bool isManualTest = false)
+        {
+            if (!isObsConnected)
+            {
+                bool reconnected = await ConnectToObsWebSocketAsync();
+                UpdateObsStatusUI(reconnected);
+            }
+
+            if (isObsConnected && obsClientWebSocket != null && obsClientWebSocket.State == WebSocketState.Open)
+            {
+                try
+                {
+                    string reqPayload = "{\"op\":6,\"d\":{\"requestType\":\"SaveReplayBuffer\",\"requestId\":\"save_replay_req\"}}";
+                    byte[] bytes = Encoding.UTF8.GetBytes(reqPayload);
+                    await obsClientWebSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+
+                    if (isManualTest)
+                    {
+                        AddActivityFeedCard("🎬 TEST REPLAY", "TEST REPLAY TUGMASI BOSILDI! Local OBS Replay Buffer saqlandi! (Port " + safeObsPort + ")", "#00F2FE");
+                    }
+                    else
+                    {
+                        AddActivityFeedCard("⚽ GOL REPLAY", "GOL REPLAY SIGNAL KELDI! Local OBS Replay Buffer saqlandi! (Maydon #" + safeFieldId + ")", "#00F2FE");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AddActivityFeedCard("⚠️ OBS WEBSOCKET XATOSI", "OBS Replay yuborishda xatolik: " + ex.Message, "#FFC800");
+                }
+            }
+            else
+            {
+                AddActivityFeedCard("🔴 OBS ULANMAGAN", "OBS Studio ishga tushirilmagan yoki WebSocket porti (" + safeObsPort + ") yopiq. OBS va WebSocket sozlamasini tekshiring!", "#FF4444");
+            }
+        }
+
         private void StartRemotePollingLoop()
         {
             Task.Run(async () =>
@@ -596,39 +772,10 @@ namespace AmatoraObsWpf
                     if (body != lastSeenSignalTime)
                     {
                         lastSeenSignalTime = body;
-                        AddActivityFeedCard("⚽ GOL SIGNAL", "Maydon #" + safeFieldId + " uchun masofaviy gol signali qabul qilindi! OBS Replay ishga tushirilmoqda...", "#00F2FE");
-                        TriggerLocalObsReplayWebSocket();
+                        await TriggerObsReplayBufferAsync(false);
                     }
                 }
             }
-        }
-
-        private void TriggerLocalObsReplayWebSocket()
-        {
-            Task.Run(() =>
-            {
-                try
-                {
-                    int port = 4455;
-                    int.TryParse(safeObsPort, out port);
-
-                    using (TcpClient client = new TcpClient())
-                    {
-                        client.Connect(safeObsIp, port);
-                        using (NetworkStream stream = client.GetStream())
-                        {
-                            string request = "{\"op\":6,\"d\":{\"requestType\":\"SaveReplayBuffer\",\"requestId\":\"save_rb\"}}";
-                            byte[] data = Encoding.UTF8.GetBytes(request);
-                            stream.Write(data, 0, data.Length);
-                            AddActivityFeedCard("🎥 OBS WEBSOCKET", "Replay Buffer saqlash buyrug'i local OBS port " + port + " ga yuborildi!", "#FF007F");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    AddActivityFeedCard("⚠️ OBS WEBSOCKET", "Local OBS WebSocket bilan ulanishda eshitish: " + ex.Message, "#FFC800");
-                }
-            });
         }
     }
 }
