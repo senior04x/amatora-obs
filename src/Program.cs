@@ -117,7 +117,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v3.3.0 Universal)";
+            Title = "AMATORA OBS Replay Engine (v3.4.0 Universal)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -498,6 +498,20 @@ namespace AmatoraObsWpf
             ShowLoginView();
         }
 
+        private void ExitApplication()
+        {
+            try
+            {
+                if (trayIcon != null)
+                {
+                    trayIcon.Visible = false;
+                    trayIcon.Dispose();
+                }
+            }
+            catch { }
+            System.Windows.Application.Current.Shutdown();
+        }
+
         private async void InitializeAndStartPollingAsync()
         {
             await FetchAndLockInitialSignalStateAsync();
@@ -614,7 +628,7 @@ namespace AmatoraObsWpf
                     Activate();
                 });
                 strip.MenuItems.Add("🧹 Replays Papkasini Tozalash", (s, e) => CleanReplaysFolder());
-                strip.MenuItems.Add("🚪 Chiqish (Logout)", (s, e) => UserLogout());
+                strip.MenuItems.Add("❌ Dasturdan Chiqish", (s, e) => ExitApplication());
 
                 trayIcon.ContextMenu = strip;
                 trayIcon.DoubleClick += (s, e) => {
