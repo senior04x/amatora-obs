@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -79,7 +80,6 @@ namespace AmatoraObsWpf
         private string safeFieldId = "1";
 
         private bool isServiceRunning = true;
-        private bool isObsConnected = false;
         private string lastSeenSignalTime = "";
         private HttpClient httpClient;
 
@@ -88,7 +88,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v2.0.0)";
+            Title = "AMATORA OBS Replay Engine (v2.2.0)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -103,7 +103,7 @@ namespace AmatoraObsWpf
             configFilePath = System.IO.Path.Combine(appData, "AmatoraObsConfig.ini");
 
             httpClient = new HttpClient();
-            httpClient.Timeout = TimeSpan.FromSeconds(10);
+            httpClient.Timeout = TimeSpan.FromSeconds(30);
             httpClient.DefaultRequestHeaders.Add("apikey", SupabaseKey);
             httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SupabaseKey);
 
@@ -179,7 +179,7 @@ namespace AmatoraObsWpf
         {
             if (txtHeaderFieldBadge != null) txtHeaderFieldBadge.Text = "MAYDON #" + safeFieldId;
             if (txtMainFieldTitle != null) txtMainFieldTitle.Text = "FIELD MONITOR (MAYDON #" + safeFieldId + ")";
-            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.0.0) — Maydon #" + safeFieldId + " faol!";
+            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.2.0) — Maydon #" + safeFieldId + " faol!";
         }
 
         private void BuildUI()
@@ -341,7 +341,7 @@ namespace AmatoraObsWpf
             };
             txtEngineStatusSub = new TextBlock
             {
-                Text = "AMATORA OBS Replay Engine (v2.0.0) — Maydon #" + safeFieldId + " faol!",
+                Text = "AMATORA OBS Replay Engine (v2.2.0) — Maydon #" + safeFieldId + " faol!",
                 FontSize = 13,
                 Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 170)),
                 Margin = new Thickness(0, 4, 0, 0)
@@ -372,7 +372,7 @@ namespace AmatoraObsWpf
 
             btnTestReplay = new Button
             {
-                Content = "🎬 TEST REPLAY BUFFER",
+                Content = "🎬 TEST REPLAY BUFFER (3s -> Scene -> 20s -> Main -> Upload)",
                 FontSize = 13,
                 FontWeight = FontWeights.Bold,
                 Foreground = Brushes.Black,
@@ -380,7 +380,7 @@ namespace AmatoraObsWpf
                 Padding = new Thickness(16, 9, 16, 9),
                 Cursor = Cursors.Hand
             };
-            btnTestReplay.Click += async (s, e) => await SendObsSaveReplayCommandAsync(true);
+            btnTestReplay.Click += async (s, e) => await ExecuteFullGoalReplayWorkflowAsync("", "");
             btnPanel.Children.Add(btnTestReplay);
 
             Grid.SetColumn(btnPanel, 1);
@@ -406,7 +406,7 @@ namespace AmatoraObsWpf
             scrollActivityFeed.Content = pnlActivityFeed;
             feedBorder.Child = scrollActivityFeed;
 
-            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.0.0) tushdi! Maydon #" + safeFieldId + " uchun tayyor...", "#00F2FE");
+            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.2.0) tushdi! Maydon #" + safeFieldId + " — 3s delay -> ReplayScene -> 20s -> MainScene -> Supabase Upload tayyor!", "#00F2FE");
 
             return b;
         }
@@ -657,14 +657,12 @@ namespace AmatoraObsWpf
                     await ws.ConnectAsync(wsUri, cts.Token);
                     if (ws.State == WebSocketState.Open)
                     {
-                        isObsConnected = true;
                         return true;
                     }
                 }
             }
             catch { }
 
-            isObsConnected = false;
             return false;
         }
 
@@ -700,7 +698,13 @@ namespace AmatoraObsWpf
             }
         }
 
-        private async Task SendObsSaveReplayCommandAsync(bool isManualTest)
+        private async Task SendObsWebSocketCommandPayloadAsync(ClientWebSocket ws, CancellationToken ct, string jsonPayload)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(jsonPayload);
+            await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
+        }
+
+        private async Task ExecuteFullGoalReplayWorkflowAsync(string matchId, string eventId)
         {
             int port = 4455;
             int.TryParse(safeObsPort, out port);
@@ -708,24 +712,24 @@ namespace AmatoraObsWpf
 
             try
             {
+                AddActivityFeedCard("⚽ WORKFLOW", "Gol Replay avtomatizatsiyasi boshlandi! (Maydon #" + safeFieldId + ")", "#00F2FE");
+
                 using (ClientWebSocket ws = new ClientWebSocket())
                 {
-                    CancellationTokenSource cts = new CancellationTokenSource(4000);
+                    CancellationTokenSource cts = new CancellationTokenSource(30000); // 30s workflow timeout
                     await ws.ConnectAsync(new Uri(wsUriStr), cts.Token);
 
                     if (ws.State == WebSocketState.Open)
                     {
-                        isObsConnected = true;
                         UpdateObsStatusUI(true);
 
-                        // Read op:0 (Hello) message from OBS
+                        // Read op:0 (Hello)
                         byte[] recvBuf = new byte[4096];
                         WebSocketReceiveResult recvResult = await ws.ReceiveAsync(new ArraySegment<byte>(recvBuf), cts.Token);
                         string helloJson = Encoding.UTF8.GetString(recvBuf, 0, recvResult.Count);
 
                         string identifyPayload = "{\"op\":1,\"d\":{\"rpcVersion\":1}}";
 
-                        // Check if OBS requires Authentication
                         if (helloJson.Contains("authentication") && helloJson.Contains("challenge") && helloJson.Contains("salt"))
                         {
                             string challenge = ExtractJsonField(helloJson, "challenge");
@@ -742,40 +746,138 @@ namespace AmatoraObsWpf
                         }
 
                         // Send op:1 (Identify)
-                        byte[] idBytes = Encoding.UTF8.GetBytes(identifyPayload);
-                        await ws.SendAsync(new ArraySegment<byte>(idBytes), WebSocketMessageType.Text, true, cts.Token);
-
-                        // Small delay for OBS session identification
+                        await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, identifyPayload);
                         await Task.Delay(200);
 
-                        // Send op:6 (SaveReplayBuffer request)
+                        // STEP 1: Send SaveReplayBuffer request to OBS
+                        AddActivityFeedCard("🎬 OBS SAVE", "SaveReplayBuffer yuborildi. Replay Buffer saqlanmoqda...", "#00F2FE");
                         string saveReq = "{\"op\":6,\"d\":{\"requestType\":\"SaveReplayBuffer\",\"requestId\":\"save_rb_id\"}}";
-                        byte[] saveBytes = Encoding.UTF8.GetBytes(saveReq);
-                        await ws.SendAsync(new ArraySegment<byte>(saveBytes), WebSocketMessageType.Text, true, cts.Token);
+                        await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, saveReq);
 
-                        if (isManualTest)
+                        // STEP 2: Wait 3 seconds for file to be written to C:\Replays
+                        AddActivityFeedCard("⏳ DELAY (3s)", "Videoni papkaga yozilishi kutilmoqda (3 soniya)...", "#FFC800");
+                        await Task.Delay(3000);
+
+                        // STEP 3: Switch OBS Program Scene to ReplayBuffer (or ReplayScene)
+                        AddActivityFeedCard("🎥 SCENE SWITCH", "OBS Saqlangan Scene-ga (" + safeObsSceneName + ") o'tkazildi!", "#00F2FE");
+                        string switchSceneReq = "{\"op\":6,\"d\":{\"requestType\":\"SetCurrentProgramScene\",\"requestData\":{\"sceneName\":\"" + safeObsSceneName + "\"},\"requestId\":\"switch_replay\"}}";
+                        await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, switchSceneReq);
+
+                        // STEP 4: Wait 20 seconds for replay video playback in live stream
+                        AddActivityFeedCard("📺 REPLAY EFIR", "Replay kadr 20 soniya jonli efirga uzatilmoqda...", "#00F2FE");
+                        await Task.Delay(20000);
+
+                        // STEP 5: Switch OBS Program Scene back to MainScene
+                        AddActivityFeedCard("📺 MAIN SCENE", "20 soniya tugadi. OBS Asosiy Efir (MainScene)-ga qaytarildi!", "#00F2FE");
+                        string returnMainReq = "{\"op\":6,\"d\":{\"requestType\":\"SetCurrentProgramScene\",\"requestData\":{\"sceneName\":\"MainScene\"},\"requestId\":\"return_main\"}}";
+                        await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, returnMainReq);
+
+                        // STEP 6: Find latest video file in C:\Replays and Upload to Supabase Storage
+                        FileInfo latestVideo = GetLatestReplayFile(safeFolder);
+                        if (latestVideo != null && latestVideo.Exists)
                         {
-                            AddActivityFeedCard("🎬 TEST REPLAY", "TEST REPLAY TUGMASI BOSILDI! Local OBS Replay Buffer saqlandi! (Port " + safeObsPort + ")", "#00F2FE");
+                            AddActivityFeedCard("☁️ UPLOAD", "Replay video Supabase Storage-ga yuklanmoqda (" + (latestVideo.Length / 1024 / 1024) + " MB)...", "#FF007F");
+                            string publicUrl = await UploadVideoToSupabaseStorageAsync(latestVideo.FullName);
+
+                            if (!string.IsNullOrEmpty(publicUrl))
+                            {
+                                AddActivityFeedCard("✅ SUPABASE", "Replay video bulutga yuklandi!", "#00F2FE");
+
+                                // STEP 7: Link replay URL to match_event in Supabase so amatora-app plays it
+                                if (!string.IsNullOrEmpty(eventId))
+                                {
+                                    await LinkReplayUrlToMatchEventAsync(eventId, publicUrl);
+                                    AddActivityFeedCard("📱 AMATORA APP", "Replay video amatora-app ilovasiga real-time biriktirildi! ⚽🔥", "#00F2FE");
+                                }
+                            }
                         }
                         else
                         {
-                            AddActivityFeedCard("⚽ GOL REPLAY", "GOL REPLAY SIGNAL KELDI! Local OBS Replay Buffer saqlandi! (Maydon #" + safeFieldId + ")", "#00F2FE");
+                            AddActivityFeedCard("⚠️ VIDEO TOPILMADI", "Replay papkasida (" + safeFolder + ") video fayl topilmadi.", "#FFC800");
                         }
                     }
                     else
                     {
-                        isObsConnected = false;
                         UpdateObsStatusUI(false);
-                        AddActivityFeedCard("🔴 OBS ULANMAGAN", "OBS WebSocket-ga ulana olmadi. OBS va WebSocket yoqilganini tekshiring (Port: " + safeObsPort + ")", "#FF4444");
+                        AddActivityFeedCard("🔴 OBS ULANMAGAN", "OBS WebSocket-ga ulana olmadi. Port: " + safeObsPort, "#FF4444");
                     }
                 }
             }
             catch (Exception ex)
             {
-                isObsConnected = false;
                 UpdateObsStatusUI(false);
-                AddActivityFeedCard("⚠️ OBS WEBSOCKET XATOSI", "OBS Replay xatosi (Port " + safeObsPort + "): " + ex.Message, "#FFC800");
+                AddActivityFeedCard("⚠️ WORKFLOW XATOSI", "Replay workflow xatosi: " + ex.Message, "#FFC800");
             }
+        }
+
+        private FileInfo GetLatestReplayFile(string folderPath)
+        {
+            try
+            {
+                if (Directory.Exists(folderPath))
+                {
+                    DirectoryInfo dir = new DirectoryInfo(folderPath);
+                    FileInfo[] files = dir.GetFiles("*.*", SearchOption.TopDirectoryOnly)
+                        .Where(f => f.Extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                                    f.Extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase) ||
+                                    f.Extension.Equals(".mov", StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(f => f.LastWriteTime)
+                        .ToArray();
+
+                    if (files.Length > 0)
+                    {
+                        return files[0];
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private async Task<string> UploadVideoToSupabaseStorageAsync(string localFilePath)
+        {
+            try
+            {
+                byte[] fileBytes = File.ReadAllBytes(localFilePath);
+                string fileName = "replay_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".mp4";
+                string uploadUrl = SupabaseUrl + "/storage/v1/object/replays/" + fileName;
+
+                using (ByteArrayContent content = new ByteArrayContent(fileBytes))
+                {
+                    content.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
+                    content.Headers.Add("x-upsert", "true");
+
+                    HttpResponseMessage res = await httpClient.PostAsync(uploadUrl, content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        return SupabaseUrl + "/storage/v1/object/public/replays/" + fileName;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Upload Exception: " + ex.Message);
+            }
+            return "";
+        }
+
+        private async Task LinkReplayUrlToMatchEventAsync(string eventId, string videoUrl)
+        {
+            try
+            {
+                string patchUrl = SupabaseUrl + "/rest/v1/match_events?id=eq." + eventId;
+                string payloadStr = "{\"replay_video_url\":\"" + videoUrl + "\"}";
+                
+                using (StringContent content = new StringContent(payloadStr, Encoding.UTF8, "application/json"))
+                {
+                    HttpRequestMessage req = new HttpRequestMessage(new HttpMethod("PATCH"), patchUrl);
+                    req.Content = content;
+                    req.Headers.Add("Prefer", "return=minimal");
+
+                    await httpClient.SendAsync(req);
+                }
+            }
+            catch { }
         }
 
         private string ExtractJsonField(string json, string fieldName)
@@ -832,7 +934,11 @@ namespace AmatoraObsWpf
                     if (body != lastSeenSignalTime)
                     {
                         lastSeenSignalTime = body;
-                        await SendObsSaveReplayCommandAsync(false);
+                        
+                        string matchId = ExtractJsonField(body, "match_id");
+                        string eventId = ExtractJsonField(body, "event_id");
+
+                        await ExecuteFullGoalReplayWorkflowAsync(matchId, eventId);
                     }
                 }
             }
