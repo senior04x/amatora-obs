@@ -113,7 +113,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v2.8.0 Login System)";
+            Title = "AMATORA OBS Replay Engine (v2.8.1 Login System)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -334,18 +334,31 @@ namespace AmatoraObsWpf
             btnPerformLogin.Content = "⏳ TEKSHIRILMOQDA...";
             txtLoginError.Visibility = Visibility.Collapsed;
 
-            bool success = await PerformSupabaseLoginAsync(username, pwd);
-            if (success)
+            try
             {
-                isLoggedIn = true;
-                safeUsername = username;
-                SaveUserConfigValues();
-                ShowMainAppView();
+                bool success = await PerformSupabaseLoginAsync(username, pwd);
+                if (success)
+                {
+                    isLoggedIn = true;
+                    safeUsername = username;
+                    SaveUserConfigValues();
+                    
+                    // Reset login button state for next time
+                    btnPerformLogin.IsEnabled = true;
+                    btnPerformLogin.Content = "🔐 TASHKILOTGA KIRISH";
+
+                    ShowMainAppView();
+                }
+                else
+                {
+                    txtLoginError.Text = "❌ Login yoki parol xato kiritildi!";
+                    txtLoginError.Visibility = Visibility.Visible;
+                    btnPerformLogin.IsEnabled = true;
+                    btnPerformLogin.Content = "🔐 TASHKILOTGA KIRISH";
+                }
             }
-            else
+            catch
             {
-                txtLoginError.Text = "❌ Login yoki parol xato kiritildi!";
-                txtLoginError.Visibility = Visibility.Visible;
                 btnPerformLogin.IsEnabled = true;
                 btnPerformLogin.Content = "🔐 TASHKILOTGA KIRISH";
             }
@@ -431,6 +444,22 @@ namespace AmatoraObsWpf
         {
             isLoggedIn = false;
             safeUsername = "";
+            safeOrgId = "1";
+            safeOrgName = "";
+
+            // Clear login input textboxes completely
+            if (txtLoginUsername != null) txtLoginUsername.Text = "";
+            if (txtLoginPassword != null) txtLoginPassword.Password = "";
+            if (txtLoginPasswordVisible != null) txtLoginPasswordVisible.Text = "";
+            if (txtLoginError != null) txtLoginError.Visibility = Visibility.Collapsed;
+
+            // Reset Login Button state so it is active and ready
+            if (btnPerformLogin != null)
+            {
+                btnPerformLogin.IsEnabled = true;
+                btnPerformLogin.Content = "🔐 TASHKILOTGA KIRISH";
+            }
+
             SaveUserConfigValues();
             ShowLoginView();
         }
