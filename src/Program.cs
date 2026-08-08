@@ -117,7 +117,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v3.2.0 Universal)";
+            Title = "AMATORA OBS Replay Engine (v3.3.0 Universal)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -509,35 +509,26 @@ namespace AmatoraObsWpf
         {
             try
             {
-                // Lock current latest timestamps from DB at launch
-                string goalSignalName = "REMOTE_GOAL_FIELD_" + safeFieldId;
+                // Lock latest timestamp from DB on startup so historical goals don't re-trigger on app launch
+                string goalSignalName = !string.IsNullOrWhiteSpace(safeOrgId) ? ("REMOTE_GOAL_" + safeOrgId + "_FIELD_" + safeFieldId) : ("REMOTE_GOAL_FIELD_" + safeFieldId);
                 string goalUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + goalSignalName + "&select=id,logo_url";
                 HttpResponseMessage resGoal = await httpClient.GetAsync(goalUrl);
                 if (resGoal.IsSuccessStatusCode)
                 {
                     string body = await resGoal.Content.ReadAsStringAsync();
                     long ts = ExtractJsonLongField(body, "timestamp");
+                    string evId = ExtractJsonField(body, "event_id");
                     if (ts > 0)
                     {
                         lastProcessedGoalTimestamp = ts;
+                        lastProcessedEventId = evId;
                     }
-                    else
-                    {
-                        lastProcessedGoalTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    }
-                }
-                else
-                {
-                    lastProcessedGoalTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 }
 
                 // Ensure OBS is explicitly set to MainScene on launch
                 await EnsureObsMainSceneOnLaunchAsync();
             }
-            catch
-            {
-                lastProcessedGoalTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            }
+            catch { }
         }
 
         private async Task EnsureObsMainSceneOnLaunchAsync()
@@ -1506,37 +1497,40 @@ namespace AmatoraObsWpf
             if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(fieldName)) return "";
             try
             {
-                int keyIdx = json.IndexOf("\"" + fieldName + "\"");
+                // Unescape escaped JSON strings if present e.g. \"timestamp\": -> "timestamp":
+                string clean = json.Replace("\\\"", "\"").Replace("\\\\", "\\");
+
+                int keyIdx = clean.IndexOf("\"" + fieldName + "\"");
                 if (keyIdx == -1) return "";
 
-                int colonIdx = json.IndexOf(":", keyIdx);
+                int colonIdx = clean.IndexOf(":", keyIdx);
                 if (colonIdx == -1) return "";
 
                 int start = colonIdx + 1;
-                while (start < json.Length && (json[start] == ' ' || json[start] == '\t' || json[start] == '\r' || json[start] == '\n'))
+                while (start < clean.Length && (clean[start] == ' ' || clean[start] == '\t' || clean[start] == '\r' || clean[start] == '\n'))
                 {
                     start++;
                 }
 
-                if (start >= json.Length) return "";
+                if (start >= clean.Length) return "";
 
-                if (json[start] == '"')
+                if (clean[start] == '"')
                 {
                     start++;
-                    int end = json.IndexOf("\"", start);
+                    int end = clean.IndexOf("\"", start);
                     if (end != -1)
                     {
-                        return json.Substring(start, end - start);
+                        return clean.Substring(start, end - start);
                     }
                 }
                 else
                 {
                     int end = start;
-                    while (end < json.Length && json[end] != ',' && json[end] != '}' && json[end] != ']' && json[end] != ' ' && json[end] != '\r' && json[end] != '\n')
+                    while (end < clean.Length && clean[end] != ',' && clean[end] != '}' && clean[end] != ']' && clean[end] != ' ' && clean[end] != '\r' && clean[end] != '\n')
                     {
                         end++;
                     }
-                    return json.Substring(start, end - start).Trim();
+                    return clean.Substring(start, end - start).Trim();
                 }
             }
             catch { }
@@ -1586,7 +1580,9 @@ namespace AmatoraObsWpf
             string generalGoalSignal = "REMOTE_GOAL_FIELD_" + safeFieldId;
             string scopedGoalSignal = !string.IsNullOrWhiteSpace(safeOrgId) ? ("REMOTE_GOAL_" + safeOrgId + "_FIELD_" + safeFieldId) : "";
 
-            string[] goalSignalsToPoll = string.IsNullOrEmpty(scopedGoalSignal) ? new string[] { generalGoalSignal } : new string[] { scopedGoalSignal, generalGoalSignal };
+            string[] goalSignalsToPoll = string.IsNullOrEmpty(scopedGoalSignal) 
+                ? new string[] { generalGoalSignal } 
+                : new string[] { scopedGoalSignal, generalGoalSignal };
 
             foreach (string goalSignalName in goalSignalsToPoll)
             {
@@ -1598,14 +1594,17 @@ namespace AmatoraObsWpf
                 if (goalRes.IsSuccessStatusCode)
                 {
                     string body = await goalRes.Content.ReadAsStringAsync();
-                    if (!string.IsNullOrWhiteSpace(body) && body.Contains("timestamp"))
+                    if (!string.IsNullOrWhiteSpace(body) && (body.Contains("timestamp") || body.Contains("event_id")))
                     {
                         long timestamp = ExtractJsonLongField(body, "timestamp");
                         string eventId = ExtractJsonField(body, "event_id");
                         string signalOrgId = ExtractJsonField(body, "org_id");
 
-                        // ANTI-LOOP CHECK: Must be newer than lastProcessedGoalTimestamp AND not already processed
-                        if (timestamp > 0 && timestamp > lastProcessedGoalTimestamp && (!string.IsNullOrEmpty(eventId) ? eventId != lastProcessedEventId : true))
+                        // Trigger if timestamp > lastProcessedGoalTimestamp OR (eventId is non-empty and eventId != lastProcessedEventId)
+                        bool isNewSignal = (timestamp > 0 && timestamp > lastProcessedGoalTimestamp) || 
+                                           (!string.IsNullOrEmpty(eventId) && eventId != lastProcessedEventId);
+
+                        if (isNewSignal)
                         {
                             // Org match check
                             bool isOrgMatch = string.IsNullOrWhiteSpace(safeOrgId) || 
@@ -1615,8 +1614,8 @@ namespace AmatoraObsWpf
 
                             if (isOrgMatch)
                             {
-                                lastProcessedGoalTimestamp = timestamp;
-                                lastProcessedEventId = eventId;
+                                if (timestamp > 0) lastProcessedGoalTimestamp = timestamp;
+                                if (!string.IsNullOrEmpty(eventId)) lastProcessedEventId = eventId;
 
                                 AddActivityFeedCard("⚽ GOL SIGNAL TUTILDI", "Org ID: " + (string.IsNullOrEmpty(signalOrgId) ? safeOrgId : signalOrgId) + " | Maydon #" + safeFieldId, "#00F2FE");
                                 await ExecuteFullGoalReplayWorkflowAsync(matchId: ExtractJsonField(body, "match_id"), eventId: eventId, orgId: signalOrgId);
