@@ -92,7 +92,7 @@ namespace AmatoraObsWpf
         // Config & Runtime State
         private string configFilePath;
         private string safeUsername = "";
-        private string safeOrgId = "1";
+        private string safeOrgId = "";
         private string safeOrgName = "";
         private string safeObsIp = "127.0.0.1";
         private string safeObsPort = "4455";
@@ -113,7 +113,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v2.8.1 Login System)";
+            Title = "AMATORA OBS Replay Engine (v2.9.0)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -368,6 +368,10 @@ namespace AmatoraObsWpf
         {
             try
             {
+                // Reset active org values
+                safeOrgId = "";
+                safeOrgName = "";
+
                 string emailValue = username.Contains("@") ? username : (username.Trim() + "@hfl.uz");
                 string authUrl = SupabaseUrl + "/auth/v1/token?grant_type=password";
                 string payload = "{\"email\":\"" + emailValue + "\",\"password\":\"" + password + "\"}";
@@ -380,6 +384,13 @@ namespace AmatoraObsWpf
                         string body = await res.Content.ReadAsStringAsync();
                         string userId = ExtractJsonField(body, "id");
                         
+                        // Check if organization_id exists inside user_metadata
+                        string metaOrgId = ExtractJsonField(body, "organization_id");
+                        if (!string.IsNullOrEmpty(metaOrgId))
+                        {
+                            safeOrgId = metaOrgId;
+                        }
+
                         await FetchOrganizationDetailsForUserAsync(userId);
                         return true;
                     }
@@ -393,15 +404,18 @@ namespace AmatoraObsWpf
         {
             try
             {
-                string adminUrl = SupabaseUrl + "/rest/v1/admin_users?id=eq." + userId + "&select=organization_id,role";
-                HttpResponseMessage res = await httpClient.GetAsync(adminUrl);
-                if (res.IsSuccessStatusCode)
+                if (string.IsNullOrEmpty(safeOrgId))
                 {
-                    string body = await res.Content.ReadAsStringAsync();
-                    string orgIdStr = ExtractJsonField(body, "organization_id");
-                    if (!string.IsNullOrEmpty(orgIdStr))
+                    string adminUrl = SupabaseUrl + "/rest/v1/admin_users?id=eq." + userId + "&select=organization_id,role";
+                    HttpResponseMessage res = await httpClient.GetAsync(adminUrl);
+                    if (res.IsSuccessStatusCode)
                     {
-                        safeOrgId = orgIdStr;
+                        string body = await res.Content.ReadAsStringAsync();
+                        string orgIdStr = ExtractJsonField(body, "organization_id");
+                        if (!string.IsNullOrEmpty(orgIdStr))
+                        {
+                            safeOrgId = orgIdStr;
+                        }
                     }
                 }
 
@@ -422,7 +436,10 @@ namespace AmatoraObsWpf
             }
             catch { }
 
-            if (string.IsNullOrEmpty(safeOrgName)) safeOrgName = "Tashkilot #" + safeOrgId;
+            if (string.IsNullOrEmpty(safeOrgName))
+            {
+                safeOrgName = string.IsNullOrEmpty(safeOrgId) ? "AMATORA LEAGUE" : ("Tashkilot #" + safeOrgId);
+            }
         }
 
         private void ShowLoginView()
@@ -442,9 +459,22 @@ namespace AmatoraObsWpf
 
         private void UserLogout()
         {
+            // Ask confirmation modal (Ha / Yo'q)
+            MessageBoxResult confirm = System.Windows.MessageBox.Show(
+                "Tizimdan chiqishni tasdiqlaysizmi?",
+                "Chiqishni Tasdiqlash",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question
+            );
+
+            if (confirm != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
             isLoggedIn = false;
             safeUsername = "";
-            safeOrgId = "1";
+            safeOrgId = "";
             safeOrgName = "";
 
             // Clear login input textboxes completely
@@ -700,7 +730,7 @@ namespace AmatoraObsWpf
 
         private void UpdateAllFieldLabels()
         {
-            string displayOrg = string.IsNullOrEmpty(safeOrgName) ? ("TASHKILOT #" + safeOrgId) : safeOrgName.ToUpper();
+            string displayOrg = string.IsNullOrEmpty(safeOrgName) ? (string.IsNullOrEmpty(safeOrgId) ? "AMATORA LEAGUE" : ("TASHKILOT #" + safeOrgId)) : safeOrgName.ToUpper();
             
             if (txtHeaderOrgBadge != null) txtHeaderOrgBadge.Text = "🏢 " + displayOrg;
             if (txtHeaderFieldBadge != null) txtHeaderFieldBadge.Text = "MAYDON #" + safeFieldId;
@@ -1484,6 +1514,21 @@ namespace AmatoraObsWpf
                     {
                         return json.Substring(start, end - start);
                     }
+                }
+
+                // Try integer / unquoted format e.g. "organization_id": 2
+                string searchNumPattern = "\"" + fieldName + "\":";
+                int idxNum = json.IndexOf(searchNumPattern);
+                if (idxNum != -1)
+                {
+                    int start = idxNum + searchNumPattern.Length;
+                    StringBuilder sb = new StringBuilder();
+                    while (start < json.Length && (char.IsDigit(json[start]) || json[start] == ' ' || json[start] == '-'))
+                    {
+                        if (char.IsDigit(json[start])) sb.Append(json[start]);
+                        start++;
+                    }
+                    if (sb.Length > 0) return sb.ToString();
                 }
             }
             catch { }
