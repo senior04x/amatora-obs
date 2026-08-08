@@ -113,7 +113,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v2.9.0)";
+            Title = "AMATORA OBS Replay Engine (v3.0.0 Universal)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -483,7 +483,7 @@ namespace AmatoraObsWpf
             if (txtLoginPasswordVisible != null) txtLoginPasswordVisible.Text = "";
             if (txtLoginError != null) txtLoginError.Visibility = Visibility.Collapsed;
 
-            // Reset Login Button state so it is active and ready
+            // Reset Login Button state
             if (btnPerformLogin != null)
             {
                 btnPerformLogin.IsEnabled = true;
@@ -506,7 +506,7 @@ namespace AmatoraObsWpf
             try
             {
                 // Lock existing goal signal at startup
-                string goalSignalName = GetGoalSignalName();
+                string goalSignalName = "REMOTE_GOAL_FIELD_" + safeFieldId;
                 string goalUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + goalSignalName + "&select=id,name,logo_url";
                 HttpResponseMessage resGoal = await httpClient.GetAsync(goalUrl);
                 if (resGoal.IsSuccessStatusCode)
@@ -515,7 +515,7 @@ namespace AmatoraObsWpf
                 }
 
                 // Lock existing finish signal at startup
-                string finishSignalName = GetFinishSignalName();
+                string finishSignalName = "REMOTE_FINISH_MATCH_FIELD_" + safeFieldId;
                 string finishUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + finishSignalName + "&select=id,name,logo_url";
                 HttpResponseMessage resFinish = await httpClient.GetAsync(finishUrl);
                 if (resFinish.IsSuccessStatusCode)
@@ -527,24 +527,6 @@ namespace AmatoraObsWpf
                 await EnsureObsMainSceneOnLaunchAsync();
             }
             catch { }
-        }
-
-        private string GetGoalSignalName()
-        {
-            if (!string.IsNullOrWhiteSpace(safeOrgId) && safeOrgId != "default")
-            {
-                return "REMOTE_GOAL_" + safeOrgId + "_FIELD_" + safeFieldId;
-            }
-            return "REMOTE_GOAL_FIELD_" + safeFieldId;
-        }
-
-        private string GetFinishSignalName()
-        {
-            if (!string.IsNullOrWhiteSpace(safeOrgId) && safeOrgId != "default")
-            {
-                return "REMOTE_FINISH_MATCH_" + safeOrgId + "_FIELD_" + safeFieldId;
-            }
-            return "REMOTE_FINISH_MATCH_FIELD_" + safeFieldId;
         }
 
         private async Task EnsureObsMainSceneOnLaunchAsync()
@@ -1557,50 +1539,78 @@ namespace AmatoraObsWpf
 
         private async Task PollSupabaseRemoteFieldSignal()
         {
-            // 1. Poll Goal Signal
-            string goalSignalName = GetGoalSignalName();
-            string goalUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + goalSignalName + "&select=id,name,logo_url";
+            // 1. Poll Goal Signal (Check both General and Scoped signal rows)
+            string generalGoalSignal = "REMOTE_GOAL_FIELD_" + safeFieldId;
+            string scopedGoalSignal = !string.IsNullOrWhiteSpace(safeOrgId) ? ("REMOTE_GOAL_" + safeOrgId + "_FIELD_" + safeFieldId) : "";
 
-            HttpResponseMessage goalRes = await httpClient.GetAsync(goalUrl);
-            if (goalRes.IsSuccessStatusCode)
+            string[] goalSignalsToPoll = string.IsNullOrEmpty(scopedGoalSignal) ? new string[] { generalGoalSignal } : new string[] { scopedGoalSignal, generalGoalSignal };
+
+            foreach (string goalSignalName in goalSignalsToPoll)
             {
-                string body = await goalRes.Content.ReadAsStringAsync();
-                if (!string.IsNullOrWhiteSpace(body) && body.Contains("logo_url") && body.Contains("timestamp"))
-                {
-                    if (body != lastSeenGoalSignalTime)
-                    {
-                        lastSeenGoalSignalTime = body;
-                        
-                        string signalOrgId = ExtractJsonField(body, "org_id");
-                        string matchId = ExtractJsonField(body, "match_id");
-                        string eventId = ExtractJsonField(body, "event_id");
+                string goalUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + goalSignalName + "&select=id,name,logo_url";
+                HttpResponseMessage goalRes = await httpClient.GetAsync(goalUrl);
 
-                        if (string.IsNullOrWhiteSpace(safeOrgId) || safeOrgId == "default" || string.IsNullOrWhiteSpace(signalOrgId) || signalOrgId == safeOrgId)
+                if (goalRes.IsSuccessStatusCode)
+                {
+                    string body = await goalRes.Content.ReadAsStringAsync();
+                    if (!string.IsNullOrWhiteSpace(body) && body.Contains("logo_url") && body.Contains("timestamp"))
+                    {
+                        if (body != lastSeenGoalSignalTime)
                         {
-                            await ExecuteFullGoalReplayWorkflowAsync(matchId, eventId, signalOrgId);
+                            lastSeenGoalSignalTime = body;
+                            
+                            string signalOrgId = ExtractJsonField(body, "org_id");
+                            string matchId = ExtractJsonField(body, "match_id");
+                            string eventId = ExtractJsonField(body, "event_id");
+
+                            // Execute if safeOrgId matches signalOrgId OR if safeOrgId is not set / "default"
+                            bool isOrgMatch = string.IsNullOrWhiteSpace(safeOrgId) || 
+                                             safeOrgId == "default" || 
+                                             string.IsNullOrWhiteSpace(signalOrgId) || 
+                                             signalOrgId.Equals(safeOrgId, StringComparison.OrdinalIgnoreCase);
+
+                            if (isOrgMatch)
+                            {
+                                AddActivityFeedCard("⚽ GOL SIGNAL TUTILDI", "Org ID: " + (string.IsNullOrEmpty(signalOrgId) ? safeOrgId : signalOrgId) + " | Maydon #" + safeFieldId, "#00F2FE");
+                                await ExecuteFullGoalReplayWorkflowAsync(matchId, eventId, signalOrgId);
+                                break;
+                            }
                         }
                     }
                 }
             }
 
             // 2. Poll Finish Match Signal to Clean Replays Folder
-            string finishSignalName = GetFinishSignalName();
-            string finishUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + finishSignalName + "&select=id,name,logo_url";
+            string generalFinishSignal = "REMOTE_FINISH_MATCH_FIELD_" + safeFieldId;
+            string scopedFinishSignal = !string.IsNullOrWhiteSpace(safeOrgId) ? ("REMOTE_FINISH_MATCH_" + safeOrgId + "_FIELD_" + safeFieldId) : "";
 
-            HttpResponseMessage finishRes = await httpClient.GetAsync(finishUrl);
-            if (finishRes.IsSuccessStatusCode)
+            string[] finishSignalsToPoll = string.IsNullOrEmpty(scopedFinishSignal) ? new string[] { generalFinishSignal } : new string[] { scopedFinishSignal, generalFinishSignal };
+
+            foreach (string finishSignalName in finishSignalsToPoll)
             {
-                string body = await finishRes.Content.ReadAsStringAsync();
-                if (!string.IsNullOrWhiteSpace(body) && body.Contains("logo_url") && body.Contains("timestamp"))
-                {
-                    if (body != lastSeenFinishSignalTime)
-                    {
-                        lastSeenFinishSignalTime = body;
+                string finishUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + finishSignalName + "&select=id,name,logo_url";
+                HttpResponseMessage finishRes = await httpClient.GetAsync(finishUrl);
 
-                        string signalOrgId = ExtractJsonField(body, "signal_org_id");
-                        if (string.IsNullOrWhiteSpace(safeOrgId) || safeOrgId == "default" || string.IsNullOrWhiteSpace(signalOrgId) || signalOrgId == safeOrgId)
+                if (finishRes.IsSuccessStatusCode)
+                {
+                    string body = await finishRes.Content.ReadAsStringAsync();
+                    if (!string.IsNullOrWhiteSpace(body) && body.Contains("logo_url") && body.Contains("timestamp"))
+                    {
+                        if (body != lastSeenFinishSignalTime)
                         {
-                            CleanReplaysFolder();
+                            lastSeenFinishSignalTime = body;
+
+                            string signalOrgId = ExtractJsonField(body, "org_id");
+                            bool isOrgMatch = string.IsNullOrWhiteSpace(safeOrgId) || 
+                                             safeOrgId == "default" || 
+                                             string.IsNullOrWhiteSpace(signalOrgId) || 
+                                             signalOrgId.Equals(safeOrgId, StringComparison.OrdinalIgnoreCase);
+
+                            if (isOrgMatch)
+                            {
+                                CleanReplaysFolder();
+                                break;
+                            }
                         }
                     }
                 }
