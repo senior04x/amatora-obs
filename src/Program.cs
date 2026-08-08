@@ -53,6 +53,7 @@ namespace AmatoraObsWpf
         private TextBlock txtEngineStatusSub;
         private Button btnTestReplay;
         private Button btnCheckObsConnection;
+        private Button btnCleanFolder;
 
         // Settings Controls
         private TextBox txtObsIp;
@@ -80,7 +81,8 @@ namespace AmatoraObsWpf
         private string safeFieldId = "1";
 
         private bool isServiceRunning = true;
-        private string lastSeenSignalTime = "";
+        private string lastSeenGoalSignalTime = "";
+        private string lastSeenFinishSignalTime = "";
         private HttpClient httpClient;
 
         private const string SupabaseUrl = "https://xzzyhfyazwohdqqbjiiy.supabase.co";
@@ -88,7 +90,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v2.2.0)";
+            Title = "AMATORA OBS Replay Engine (v2.3.0)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -179,7 +181,7 @@ namespace AmatoraObsWpf
         {
             if (txtHeaderFieldBadge != null) txtHeaderFieldBadge.Text = "MAYDON #" + safeFieldId;
             if (txtMainFieldTitle != null) txtMainFieldTitle.Text = "FIELD MONITOR (MAYDON #" + safeFieldId + ")";
-            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.2.0) — Maydon #" + safeFieldId + " faol!";
+            if (txtEngineStatusSub != null) txtEngineStatusSub.Text = "AMATORA OBS Replay Engine (v2.3.0) — Maydon #" + safeFieldId + " faol!";
         }
 
         private void BuildUI()
@@ -341,7 +343,7 @@ namespace AmatoraObsWpf
             };
             txtEngineStatusSub = new TextBlock
             {
-                Text = "AMATORA OBS Replay Engine (v2.2.0) — Maydon #" + safeFieldId + " faol!",
+                Text = "AMATORA OBS Replay Engine (v2.3.0) — Maydon #" + safeFieldId + " faol!",
                 FontSize = 13,
                 Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 170)),
                 Margin = new Thickness(0, 4, 0, 0)
@@ -351,7 +353,7 @@ namespace AmatoraObsWpf
             Grid.SetColumn(headerStack, 0);
             topGrid.Children.Add(headerStack);
 
-            // Action Buttons Panel (TEST REPLAY & RECONNECT)
+            // Action Buttons Panel (TEST REPLAY & CLEAN FOLDER & RECONNECT)
             StackPanel btnPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 15) };
 
             btnCheckObsConnection = new Button
@@ -363,16 +365,32 @@ namespace AmatoraObsWpf
                 Background = new SolidColorBrush(Color.FromRgb(25, 35, 55)),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0, 242, 254)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(14, 8, 14, 8),
+                Padding = new Thickness(12, 8, 12, 8),
                 Margin = new Thickness(0, 0, 10, 0),
                 Cursor = Cursors.Hand
             };
             btnCheckObsConnection.Click += (s, e) => CheckObsWebSocketConnectionAsync();
             btnPanel.Children.Add(btnCheckObsConnection);
 
+            btnCleanFolder = new Button
+            {
+                Content = "🧹 PAPKANI TOZALASH",
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(255, 68, 68)),
+                Background = new SolidColorBrush(Color.FromRgb(45, 25, 35)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(255, 68, 68)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 8, 12, 8),
+                Margin = new Thickness(0, 0, 10, 0),
+                Cursor = Cursors.Hand
+            };
+            btnCleanFolder.Click += (s, e) => CleanReplaysFolder();
+            btnPanel.Children.Add(btnCleanFolder);
+
             btnTestReplay = new Button
             {
-                Content = "🎬 TEST REPLAY BUFFER (3s -> Scene -> 20s -> Main -> Upload)",
+                Content = "🎬 TEST REPLAY BUFFER",
                 FontSize = 13,
                 FontWeight = FontWeights.Bold,
                 Foreground = Brushes.Black,
@@ -406,7 +424,7 @@ namespace AmatoraObsWpf
             scrollActivityFeed.Content = pnlActivityFeed;
             feedBorder.Child = scrollActivityFeed;
 
-            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.2.0) tushdi! Maydon #" + safeFieldId + " — 3s delay -> ReplayScene -> 20s -> MainScene -> Supabase Upload tayyor!", "#00F2FE");
+            AddActivityFeedCard("🚀 SYSTEM", "AMATORA Engine (v2.3.0) tushdi! Maydon #" + safeFieldId + " — O'yin yakunlanganda Replays papkasi avtomatik tozalanadi!", "#00F2FE");
 
             return b;
         }
@@ -716,7 +734,7 @@ namespace AmatoraObsWpf
 
                 using (ClientWebSocket ws = new ClientWebSocket())
                 {
-                    CancellationTokenSource cts = new CancellationTokenSource(30000); // 30s workflow timeout
+                    CancellationTokenSource cts = new CancellationTokenSource(30000);
                     await ws.ConnectAsync(new Uri(wsUriStr), cts.Token);
 
                     if (ws.State == WebSocketState.Open)
@@ -807,6 +825,35 @@ namespace AmatoraObsWpf
             {
                 UpdateObsStatusUI(false);
                 AddActivityFeedCard("⚠️ WORKFLOW XATOSI", "Replay workflow xatosi: " + ex.Message, "#FFC800");
+            }
+        }
+
+        private void CleanReplaysFolder()
+        {
+            try
+            {
+                if (Directory.Exists(safeFolder))
+                {
+                    DirectoryInfo dir = new DirectoryInfo(safeFolder);
+                    FileInfo[] files = dir.GetFiles("*.*", SearchOption.TopDirectoryOnly);
+                    int count = 0;
+
+                    foreach (FileInfo file in files)
+                    {
+                        try
+                        {
+                            file.Delete();
+                            count++;
+                        }
+                        catch { }
+                    }
+
+                    AddActivityFeedCard("🧹 PAPKA TOZALANDI", "O'yin yakunlandi! " + safeFolder + " papkasidagi " + count + " ta eski replay videolari tozalandi.", "#00F2FE");
+                }
+            }
+            catch (Exception ex)
+            {
+                AddActivityFeedCard("⚠️ TOZALASH XATOSI", "Papkani tozalashda xatolik: " + ex.Message, "#FFC800");
             }
         }
 
@@ -922,23 +969,42 @@ namespace AmatoraObsWpf
 
         private async Task PollSupabaseRemoteFieldSignal()
         {
-            string targetSignalName = "REMOTE_GOAL_FIELD_" + safeFieldId;
-            string url = SupabaseUrl + "/rest/v1/sponsors?name=eq." + targetSignalName + "&select=id,name,logo_url";
+            // 1. Poll Goal Signal
+            string goalSignalName = "REMOTE_GOAL_FIELD_" + safeFieldId;
+            string goalUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + goalSignalName + "&select=id,name,logo_url";
 
-            HttpResponseMessage res = await httpClient.GetAsync(url);
-            if (res.IsSuccessStatusCode)
+            HttpResponseMessage goalRes = await httpClient.GetAsync(goalUrl);
+            if (goalRes.IsSuccessStatusCode)
             {
-                string body = await res.Content.ReadAsStringAsync();
+                string body = await goalRes.Content.ReadAsStringAsync();
                 if (!string.IsNullOrWhiteSpace(body) && body.Contains("logo_url") && body.Contains("timestamp"))
                 {
-                    if (body != lastSeenSignalTime)
+                    if (body != lastSeenGoalSignalTime)
                     {
-                        lastSeenSignalTime = body;
+                        lastSeenGoalSignalTime = body;
                         
                         string matchId = ExtractJsonField(body, "match_id");
                         string eventId = ExtractJsonField(body, "event_id");
 
                         await ExecuteFullGoalReplayWorkflowAsync(matchId, eventId);
+                    }
+                }
+            }
+
+            // 2. Poll Finish Match Signal to Clean Replays Folder
+            string finishSignalName = "REMOTE_FINISH_MATCH_FIELD_" + safeFieldId;
+            string finishUrl = SupabaseUrl + "/rest/v1/sponsors?name=eq." + finishSignalName + "&select=id,name,logo_url";
+
+            HttpResponseMessage finishRes = await httpClient.GetAsync(finishUrl);
+            if (finishRes.IsSuccessStatusCode)
+            {
+                string body = await finishRes.Content.ReadAsStringAsync();
+                if (!string.IsNullOrWhiteSpace(body) && body.Contains("logo_url") && body.Contains("timestamp"))
+                {
+                    if (body != lastSeenFinishSignalTime)
+                    {
+                        lastSeenFinishSignalTime = body;
+                        CleanReplaysFolder();
                     }
                 }
             }
