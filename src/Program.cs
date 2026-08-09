@@ -34,16 +34,16 @@ namespace AmatoraObsWpf
     {
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-        private const byte VK_F11 = 0x7A;
+        private const byte VK_F10 = 0x79;
         private const uint KEYEVENTF_KEYUP = 0x0002;
 
-        public static void TriggerF11Hotkey()
+        public static void TriggerF10Hotkey()
         {
             try
             {
-                keybd_event(VK_F11, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_F10, 0, 0, UIntPtr.Zero);
                 System.Threading.Thread.Sleep(50);
-                keybd_event(VK_F11, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                keybd_event(VK_F10, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
             }
             catch { }
         }
@@ -1368,6 +1368,9 @@ namespace AmatoraObsWpf
                             await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, srReq2);
                         }
                         catch { }
+
+                        // Trigger F10 keyboard shortcut to save clean camera replay buffer from Source Record plugin
+                        TriggerF10Hotkey();
 
                         // STEP 2: Wait 3 seconds for file to be written to C:\Replays
                         AddActivityFeedCard("⏳ DELAY (3s)", "Videoni papkaga yozilishi kutilmoqda (3 soniya)...", "#FFC800");
