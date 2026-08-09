@@ -32,6 +32,22 @@ namespace AmatoraObsWpf
 
     public class MainWindow : Window
     {
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+        private const byte VK_F11 = 0x7A;
+        private const uint KEYEVENTF_KEYUP = 0x0002;
+
+        public static void TriggerF11Hotkey()
+        {
+            try
+            {
+                keybd_event(VK_F11, 0, 0, UIntPtr.Zero);
+                System.Threading.Thread.Sleep(50);
+                keybd_event(VK_F11, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+            }
+            catch { }
+        }
+
         // UI Views
         private Grid mainGrid;
         private Grid loginView;
@@ -1352,6 +1368,9 @@ namespace AmatoraObsWpf
                             await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, srReq2);
                         }
                         catch { }
+
+                        // Also trigger F11 keyboard shortcut to ensure Source Record saves clean replay buffer
+                        TriggerF11Hotkey();
 
                         // STEP 2: Wait 3 seconds for file to be written to C:\Replays
                         AddActivityFeedCard("⏳ DELAY (3s)", "Videoni papkaga yozilishi kutilmoqda (3 soniya)...", "#FFC800");
