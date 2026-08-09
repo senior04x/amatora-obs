@@ -1485,6 +1485,36 @@ namespace AmatoraObsWpf
         {
             try
             {
+                // 1. Check for recent CleanReplay_ files in Videos folder or folderPath (created in last 30s)
+                string userVideos = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+                string[] searchFolders = new string[] { folderPath, userVideos };
+
+                System.Collections.Generic.List<FileInfo> cleanFiles = new System.Collections.Generic.List<FileInfo>();
+                foreach (string sf in searchFolders)
+                {
+                    if (!string.IsNullOrEmpty(sf) && Directory.Exists(sf))
+                    {
+                        DirectoryInfo dInfo = new DirectoryInfo(sf);
+                        FileInfo[] found = dInfo.GetFiles("CleanReplay_*.*", SearchOption.TopDirectoryOnly)
+                            .Where(f => f.Extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                                        f.Extension.Equals(".mkv", StringComparison.OrdinalIgnoreCase) ||
+                                        f.Extension.Equals(".mov", StringComparison.OrdinalIgnoreCase))
+                            .OrderByDescending(f => f.LastWriteTime)
+                            .ToArray();
+
+                        if (found.Length > 0 && (DateTime.Now - found[0].LastWriteTime).TotalSeconds < 35)
+                        {
+                            cleanFiles.Add(found[0]);
+                        }
+                    }
+                }
+
+                if (cleanFiles.Count > 0)
+                {
+                    return cleanFiles.OrderByDescending(f => f.LastWriteTime).First();
+                }
+
+                // 2. Fallback to newest file in primary folderPath
                 if (Directory.Exists(folderPath))
                 {
                     DirectoryInfo dir = new DirectoryInfo(folderPath);
