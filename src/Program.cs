@@ -1376,6 +1376,17 @@ namespace AmatoraObsWpf
                         AddActivityFeedCard("⏳ DELAY (3s)", "Videoni papkaga yozilishi kutilmoqda (3 soniya)...", "#FFC800");
                         await Task.Delay(3000);
 
+                        // Update OBS Media Source input settings to play the newly saved replay file
+                        FileInfo latestVideo = GetLatestReplayFile(safeFolder);
+                        if (latestVideo != null && latestVideo.Exists)
+                        {
+                            string formattedPath = latestVideo.FullName.Replace('\\', '/');
+                            string setMediaReq1 = "{\"op\":6,\"d\":{\"requestType\":\"SetInputSettings\",\"requestData\":{\"inputName\":\"Media\",\"inputSettings\":{\"local_file\":\"" + formattedPath + "\"}},\"requestId\":\"set_media_1\"}}";
+                            string setMediaReq2 = "{\"op\":6,\"d\":{\"requestType\":\"SetInputSettings\",\"requestData\":{\"inputName\":\"Media Source\",\"inputSettings\":{\"local_file\":\"" + formattedPath + "\"}},\"requestId\":\"set_media_2\"}}";
+                            await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, setMediaReq1);
+                            await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, setMediaReq2);
+                        }
+
                         // STEP 3: Switch OBS Program Scene to ReplayBuffer (or ReplayScene)
                         AddActivityFeedCard("🎥 SCENE SWITCH", "OBS Saqlangan Scene-ga (" + safeObsSceneName + ") o'tkazildi!", "#00F2FE");
                         string switchSceneReq = "{\"op\":6,\"d\":{\"requestType\":\"SetCurrentProgramScene\",\"requestData\":{\"sceneName\":\"" + safeObsSceneName + "\"},\"requestId\":\"switch_replay\"}}";
@@ -1391,7 +1402,7 @@ namespace AmatoraObsWpf
                         await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, returnMainReq);
 
                         // STEP 6: Find latest video file in C:\Replays and Upload to Supabase Storage with org_id isolation
-                        FileInfo latestVideo = GetLatestReplayFile(safeFolder);
+                        latestVideo = GetLatestReplayFile(safeFolder);
                         if (latestVideo != null && latestVideo.Exists)
                         {
                             AddActivityFeedCard("☁️ UPLOAD", "Replay video Supabase Storage-ga yuklanmoqda (" + (latestVideo.Length / 1024 / 1024) + " MB)...", "#FF007F");
