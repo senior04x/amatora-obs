@@ -1338,10 +1338,20 @@ namespace AmatoraObsWpf
                         await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, identifyPayload);
                         await Task.Delay(200);
 
-                        // STEP 1: Send SaveReplayBuffer request to OBS
+                        // STEP 1: Send SaveReplayBuffer request to OBS (both built-in & source-record plugin)
                         AddActivityFeedCard("🎬 OBS SAVE", "SaveReplayBuffer yuborildi. Replay Buffer saqlanmoqda...", "#00F2FE");
                         string saveReq = "{\"op\":6,\"d\":{\"requestType\":\"SaveReplayBuffer\",\"requestId\":\"save_rb_id\"}}";
                         await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, saveReq);
+
+                        // Trigger Source Record plugin vendor request for clean camera feed
+                        try
+                        {
+                            string srReq1 = "{\"op\":6,\"d\":{\"requestType\":\"CallVendorRequest\",\"requestData\":{\"vendorName\":\"source-record\",\"requestType\":\"save\"},\"requestId\":\"sr_req_1\"}}";
+                            string srReq2 = "{\"op\":6,\"d\":{\"requestType\":\"CallVendorRequest\",\"requestData\":{\"vendorName\":\"source-record\",\"requestType\":\"save_replay_buffer\"},\"requestId\":\"sr_req_2\"}}";
+                            await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, srReq1);
+                            await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, srReq2);
+                        }
+                        catch { }
 
                         // STEP 2: Wait 3 seconds for file to be written to C:\Replays
                         AddActivityFeedCard("⏳ DELAY (3s)", "Videoni papkaga yozilishi kutilmoqda (3 soniya)...", "#FFC800");
