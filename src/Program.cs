@@ -1459,6 +1459,12 @@ namespace AmatoraObsWpf
 
                     if (files.Length > 0)
                     {
+                        // If CleanReplay_ file exists, prioritize it over standard Replay_ files
+                        FileInfo cleanFile = files.FirstOrDefault(f => f.Name.StartsWith("CleanReplay", StringComparison.OrdinalIgnoreCase));
+                        if (cleanFile != null)
+                        {
+                            return cleanFile;
+                        }
                         return files[0];
                     }
                 }
