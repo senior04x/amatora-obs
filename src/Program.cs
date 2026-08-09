@@ -1369,9 +1369,6 @@ namespace AmatoraObsWpf
                         }
                         catch { }
 
-                        // Also trigger F11 keyboard shortcut to ensure Source Record saves clean replay buffer
-                        TriggerF11Hotkey();
-
                         // STEP 2: Wait 3 seconds for file to be written to C:\Replays
                         AddActivityFeedCard("⏳ DELAY (3s)", "Videoni papkaga yozilishi kutilmoqda (3 soniya)...", "#FFC800");
                         await Task.Delay(3000);
