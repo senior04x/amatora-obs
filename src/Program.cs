@@ -1354,7 +1354,15 @@ namespace AmatoraObsWpf
                         await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, identifyPayload);
                         await Task.Delay(200);
 
-                        // STEP 1: Send SaveReplayBuffer request to OBS (both built-in & source-record plugin)
+                        // STEP 1: Ensure OBS Replay Buffer is started & send SaveReplayBuffer request to OBS
+                        try
+                        {
+                            string startRbReq = "{\"op\":6,\"d\":{\"requestType\":\"StartReplayBuffer\",\"requestId\":\"start_rb_id\"}}";
+                            await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, startRbReq);
+                            await Task.Delay(300);
+                        }
+                        catch { }
+
                         AddActivityFeedCard("🎬 OBS SAVE", "SaveReplayBuffer yuborildi. Replay Buffer saqlanmoqda...", "#00F2FE");
                         string saveReq = "{\"op\":6,\"d\":{\"requestType\":\"SaveReplayBuffer\",\"requestId\":\"save_rb_id\"}}";
                         await SendObsWebSocketCommandPayloadAsync(ws, cts.Token, saveReq);
