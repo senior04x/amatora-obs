@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMATORA 30-DEGREE ANGLED VERTICAL STRIPE SWEEP</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@1,900&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: transparent;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Montserrat', sans-serif;
+        }
+
+        /* Fullscreen Stinger Sweep Wrapper */
+        .stinger-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+
+        /* 
+           VERTICAL 30-DEGREE TILTED STRIPE (Moves from Left -> Right):
+           Doesn't cover full screen! A sleek 30-degree angled beam moving smoothly across the screen.
+        */
+        .vertical-30deg-stripe-primary {
+            position: absolute;
+            width: 480px;
+            height: 220vh;
+            background: linear-gradient(135deg, #030712 0%, #09122C 40%, #11224D 70%, #050B1A 100%);
+            transform: rotate(30deg) translateX(-180vw);
+            border-left: 4px solid #1D4ED8;
+            border-right: 4px solid #1D4ED8;
+            box-shadow: 0 0 60px rgba(0, 0, 0, 0.95), 0 0 40px rgba(29, 78, 216, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            animation: sweep30degPrimary 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        .vertical-30deg-stripe-secondary {
+            position: absolute;
+            width: 480px;
+            height: 220vh;
+            background: linear-gradient(135deg, #09122C 0%, #1D4ED8 50%, #0B193D 100%);
+            transform: rotate(30deg) translateX(-190vw);
+            box-shadow: 0 0 40px rgba(29, 78, 216, 0.8);
+            animation: sweep30degSecondary 2.8s cubic-bezier(0.4, 0, 0.2, 1) 0.08s forwards;
+        }
+
+        /* AMATORA Center Content inside the 30-degree Stripe */
+        .logo-center-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            /* Un-rotate text slightly so it looks perfectly aligned with 30-degree stripe */
+            transform: rotate(-30deg);
+            z-index: 10;
+        }
+
+        .amatora-logo-img {
+            width: 140px;
+            height: 140px;
+            object-fit: contain;
+            filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 25px rgba(29, 78, 216, 0.9));
+        }
+
+        .amatora-title {
+            color: #FFFFFF;
+            font-size: 52px;
+            font-weight: 900;
+            line-height: 1;
+            letter-spacing: 10px;
+            text-transform: uppercase;
+            font-style: italic;
+            text-shadow: 0 4px 18px rgba(0, 0, 0, 0.95), 0 0 25px rgba(29, 78, 216, 0.9);
+        }
+
+        /* Smooth 30-Degree Tilted Sweep Animation from Left (-180vw) -> Center (0) -> Right (180vw) */
+        @keyframes sweep30degPrimary {
+            0% { transform: rotate(30deg) translateX(-180vw); }
+            45%, 55% { transform: rotate(30deg) translateX(0vw); }
+            100% { transform: rotate(30deg) translateX(180vw); }
+        }
+
+        @keyframes sweep30degSecondary {
+            0% { transform: rotate(30deg) translateX(-190vw); }
+            45%, 55% { transform: rotate(30deg) translateX(0vw); }
+            100% { transform: rotate(30deg) translateX(190vw); }
+        }
+    </style>
+</head>
+<body>
+    <div class="stinger-container">
+        <div class="vertical-30deg-stripe-secondary"></div>
+        <div class="vertical-30deg-stripe-primary">
+            <div class="logo-center-box">
+                <!-- OFFICIAL AMATORA PNG LOGO -->
+                <img src="logo.png" alt="AMATORA LOGO" class="amatora-logo-img" />
+
+                <!-- MINIMALIST ELEGANT AMATORA TITLE -->
+                <h1 class="amatora-title">AMATORA</h1>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

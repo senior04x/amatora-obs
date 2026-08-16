@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UEFA / PREMIER LEAGUE STYLE BROADCAST REPLAY BADGE</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Teko:wght@700&family=Montserrat:ital,wght@1,900&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: transparent;
+            overflow: hidden;
+            display: flex;
+            justify-content: flex-start;
+            align-items: flex-start;
+            padding: 30px;
+            font-family: 'Teko', 'Montserrat', sans-serif;
+        }
+
+        /* Professional TV Broadcast Parallelogram Badge */
+        .broadcast-replay-wrapper {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            background: linear-gradient(135deg, #11111E 0%, #1A050A 100%);
+            border-left: 5px solid #FF0A4B;
+            border-right: 2px solid rgba(255, 10, 75, 0.6);
+            padding: 6px 24px 6px 16px;
+            transform: skewX(-18deg);
+            border-radius: 4px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 
+                        0 0 25px rgba(255, 10, 75, 0.5), 
+                        inset 0 1px 1px rgba(255, 255, 255, 0.3);
+            overflow: hidden;
+        }
+
+        /* High-speed Glossy Light Sweep Beam (TV Sheen) */
+        .broadcast-replay-wrapper::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -150%;
+            width: 80%;
+            height: 200%;
+            background: linear-gradient(
+                90deg, 
+                transparent 0%, 
+                rgba(255, 255, 255, 0.05) 40%, 
+                rgba(255, 255, 255, 0.45) 50%, 
+                rgba(255, 255, 255, 0.05) 60%, 
+                transparent 100%
+            );
+            transform: rotate(25deg);
+            animation: lightSweep 2.8s infinite ease-in-out;
+        }
+
+        /* Inner container to un-skew text so it stays upright */
+        .unskew-content {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            transform: skewX(18deg);
+        }
+
+        /* Pulsing Red Record Circle Badge */
+        .live-dot-box {
+            position: relative;
+            width: 14px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .live-dot-ping {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: #FF0A4B;
+            opacity: 0.8;
+            animation: broadcastPing 1.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+
+        .live-dot-core {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #FF0A4B;
+            box-shadow: 0 0 12px #FF0A4B, 0 0 20px #FF0A4B;
+        }
+
+        /* UEFA / Premier League Red Ribbon Tag */
+        .tag-ribbon {
+            background: linear-gradient(90deg, #FF0A4B 0%, #D90429 100%);
+            padding: 2px 10px;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 10px rgba(255, 10, 75, 0.8);
+        }
+
+        .tag-text {
+            color: #FFFFFF;
+            font-size: 14px;
+            font-weight: 900;
+            letter-spacing: 1.5px;
+            font-family: 'Montserrat', sans-serif;
+            text-transform: uppercase;
+        }
+
+        /* Main Animated REPLAY Typography */
+        .replay-main-title {
+            color: #FFFFFF;
+            font-size: 32px;
+            font-weight: 700;
+            line-height: 1;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 
+                         0 0 15px rgba(255, 255, 255, 0.4);
+            animation: textPulse 1.8s ease-in-out infinite alternate;
+        }
+
+        /* Rotating Broadcast Replay Icon */
+        .broadcast-icon {
+            width: 22px;
+            height: 22px;
+            fill: #FF0A4B;
+            filter: drop-shadow(0 0 8px #FF0A4B);
+            animation: iconSpin 3.5s linear infinite;
+        }
+
+        /* Animations */
+        @keyframes lightSweep {
+            0% { left: -150%; }
+            35%, 100% { left: 200%; }
+        }
+
+        @keyframes broadcastPing {
+            75%, 100% {
+                transform: scale(2.8);
+                opacity: 0;
+            }
+        }
+
+        @keyframes textPulse {
+            0% { opacity: 0.85; filter: drop-shadow(0 0 2px rgba(255, 10, 75, 0.4)); }
+            100% { opacity: 1; filter: drop-shadow(0 0 10px rgba(255, 10, 75, 0.9)); }
+        }
+
+        @keyframes iconSpin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(-360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="broadcast-replay-wrapper">
+        <div class="unskew-content">
+            <div class="live-dot-box">
+                <div class="live-dot-ping"></div>
+                <div class="live-dot-core"></div>
+            </div>
+
+            <div class="tag-ribbon">
+                <span class="tag-text">SLOW MOTION</span>
+            </div>
+
+            <svg class="broadcast-icon" viewBox="0 0 24 24">
+                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+            </svg>
+
+            <span class="replay-main-title">REPLAY</span>
+        </div>
+    </div>
+</body>
+</html>
