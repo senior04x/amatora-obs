@@ -3,7 +3,7 @@
 ; =========================================================================
 
 #define MyAppName "AMATORA OBS Controller"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "3.5.0"
 #define MyAppPublisher "AMATORA Group"
 #define MyAppURL "https://amatora.uz"
 #define MyAppExeName "AMATORA.exe"

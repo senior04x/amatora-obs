@@ -24,9 +24,17 @@ namespace AmatoraObsWpf
         [STAThread]
         public static void Main()
         {
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | System.Net.SecurityProtocolType.Tls11 | System.Net.SecurityProtocolType.Tls;
-            App app = new App();
-            app.Run(new MainWindow());
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | System.Net.SecurityProtocolType.Tls11 | System.Net.SecurityProtocolType.Tls;
+                App app = new App();
+                app.Run(new MainWindow());
+            }
+            catch (Exception ex)
+            {
+                try { File.WriteAllText("crash.log", ex.ToString()); } catch { }
+                System.Windows.MessageBox.Show(ex.Message, "AMATORA OBS Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
     }
 
@@ -133,7 +141,7 @@ namespace AmatoraObsWpf
 
         public MainWindow()
         {
-            Title = "AMATORA OBS Replay Engine (v3.4.0 Universal)";
+            Title = "AMATORA OBS Replay Engine (v3.5.0 Universal)";
             Width = 1100;
             Height = 750;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -1239,20 +1247,50 @@ namespace AmatoraObsWpf
             UpdateObsStatusUI(connected);
         }
 
+        private async Task<bool> ConnectObsWebSocketWithFallbackAsync(ClientWebSocket ws, CancellationToken ct)
+        {
+            int port = 4455;
+            int.TryParse(safeObsPort, out port);
+
+            string primaryIp = string.IsNullOrWhiteSpace(safeObsIp) ? "127.0.0.1" : safeObsIp.Trim();
+
+            // 1. Try configured IP first
+            try
+            {
+                await ws.ConnectAsync(new Uri("ws://" + primaryIp + ":" + port), ct);
+                if (ws.State == WebSocketState.Open)
+                {
+                    return true;
+                }
+            }
+            catch { }
+
+            // 2. If primary IP is not 127.0.0.1 or localhost, fallback to 127.0.0.1
+            if (primaryIp != "127.0.0.1" && primaryIp != "localhost")
+            {
+                try
+                {
+                    await ws.ConnectAsync(new Uri("ws://127.0.0.1:" + port), ct);
+                    if (ws.State == WebSocketState.Open)
+                    {
+                        return true;
+                    }
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
         private async Task<bool> TestObsWebSocketHandshakeAsync()
         {
             try
             {
                 using (ClientWebSocket ws = new ClientWebSocket())
                 {
-                    int port = 4455;
-                    int.TryParse(safeObsPort, out port);
-
-                    Uri wsUri = new Uri("ws://" + safeObsIp + ":" + port);
                     CancellationTokenSource cts = new CancellationTokenSource(3000);
-
-                    await ws.ConnectAsync(wsUri, cts.Token);
-                    if (ws.State == WebSocketState.Open)
+                    bool connected = await ConnectObsWebSocketWithFallbackAsync(ws, cts.Token);
+                    if (connected && ws.State == WebSocketState.Open)
                     {
                         return true;
                     }
@@ -1307,10 +1345,6 @@ namespace AmatoraObsWpf
             if (isReplayRunning) return;
             isReplayRunning = true;
 
-            int port = 4455;
-            int.TryParse(safeObsPort, out port);
-            string wsUriStr = "ws://" + safeObsIp + ":" + port;
-
             int durationSec = 18;
             int.TryParse(safeReplayDurationSec, out durationSec);
             if (durationSec <= 0) durationSec = 18;
@@ -1322,9 +1356,9 @@ namespace AmatoraObsWpf
                 using (ClientWebSocket ws = new ClientWebSocket())
                 {
                     CancellationTokenSource cts = new CancellationTokenSource(35000);
-                    await ws.ConnectAsync(new Uri(wsUriStr), cts.Token);
+                    bool connected = await ConnectObsWebSocketWithFallbackAsync(ws, cts.Token);
 
-                    if (ws.State == WebSocketState.Open)
+                    if (connected && ws.State == WebSocketState.Open)
                     {
                         UpdateObsStatusUI(true);
 
@@ -1648,10 +1682,17 @@ namespace AmatoraObsWpf
         {
             Task.Run(async () =>
             {
+                int tickCounter = 0;
                 while (true)
                 {
                     try
                     {
+                        tickCounter++;
+                        if (tickCounter % 3 == 0)
+                        {
+                            CheckObsWebSocketConnectionAsync();
+                        }
+
                         if (isServiceRunning && isLoggedIn && !isReplayRunning)
                         {
                             await PollSupabaseRemoteFieldSignal();
@@ -1659,7 +1700,7 @@ namespace AmatoraObsWpf
                     }
                     catch { }
 
-                    await Task.Delay(2500);
+                    await Task.Delay(2000);
                 }
             });
         }
